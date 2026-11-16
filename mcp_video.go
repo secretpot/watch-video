@@ -51,13 +51,14 @@ var videoMCPTools = []mcpTool{
 	},
 	{
 		Name:        videoCaptionsTool,
-		Description: "Read dialogue and exact cue times for an interval from earlier video_evidence, without reanalyzing video.",
+		Description: "Read cached dialogue. For a known quote, pass its words in quote to get the exact span of its first and last cues.",
 		InputSchema: json.RawMessage(`{
 			"type":"object","required":["evidence","start","end"],"additionalProperties":false,
 			"properties":{
 				"evidence":{"type":"string","description":"Caption reference returned by video_evidence"},
 				"start":{"type":"string","description":"Source start time in seconds, MM:SS or HH:MM:SS"},
-				"end":{"type":"string","description":"Exclusive source end time"}
+				"end":{"type":"string","description":"Exclusive source end time"},
+				"quote":{"type":"string","description":"Optional words to align across one or more caption cues, as supplied"}
 			}
 		}`),
 	},
@@ -93,6 +94,7 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 		At           string `json:"at"`
 		Start        string `json:"start"`
 		End          string `json:"end"`
+		Quote        string `json:"quote"`
 		NoASR        bool   `json:"no_asr"`
 		SubtitleLang string `json:"subtitle_lang"`
 		Language     string `json:"language"`
@@ -101,7 +103,7 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 		return nil, fmt.Errorf("read tool arguments: %w", err)
 	}
 	if name == videoCaptionsTool {
-		return videoCaptionCues(scratch, input.Evidence, input.Start, input.End)
+		return videoCaptionCues(scratch, input.Evidence, input.Start, input.End, input.Quote)
 	}
 	if input.Input == "" {
 		return nil, errors.New("input is required")
@@ -210,7 +212,7 @@ func chapterLabel(title string) string {
 	return string(label)
 }
 
-func videoCaptionCues(scratch, reference, startArg, endArg string) ([]mcpContent, error) {
+func videoCaptionCues(scratch, reference, startArg, endArg, quote string) ([]mcpContent, error) {
 	suffix, ok := strings.CutPrefix(reference, "request-")
 	if !ok || suffix == "" || strings.ContainsFunc(suffix, func(r rune) bool { return r < '0' || r > '9' }) {
 		return nil, errors.New("evidence must be a caption reference from video_evidence")
@@ -242,9 +244,13 @@ func videoCaptionCues(scratch, reference, startArg, endArg string) ([]mcpContent
 		return nil, fmt.Errorf("caption evidence starts at %s", formatCueTime(index.Start))
 	}
 	var cues strings.Builder
+	var quoteCues []captionCue
 	for _, cue := range index.Cues {
 		if cue.Start >= start && cue.End <= end {
 			fmt.Fprintf(&cues, "%s --> %s %s\n", formatCueTime(cue.Start), formatCueTime(cue.End), strings.ReplaceAll(cue.Text, "\n", " "))
+			if quote != "" {
+				quoteCues = append(quoteCues, cue)
+			}
 		}
 	}
 	captions, sampled := boundedTranscript(cues.String())
@@ -254,8 +260,17 @@ func videoCaptionCues(scratch, reference, startArg, endArg string) ([]mcpContent
 	if sampled {
 		captions += "Caption excerpts sampled across this interval. Request a narrower window for complete dialogue."
 	}
-	text := fmt.Sprintf("Captions (%s), %s to %s:\n%s", index.Source, formatCueTime(start), formatCueTime(end), captions)
-	return []mcpContent{{Type: "text", Text: text}}, nil
+	var text strings.Builder
+	if quote != "" {
+		match, err := findCaptionQuote(quoteCues, quote)
+		if err != nil {
+			fmt.Fprintf(&text, "Quote alignment unavailable: %s.\n", err)
+		} else {
+			fmt.Fprintf(&text, "Matched quote: %s\nQuote span: %s --> %s\n", match.Text, formatCueTime(match.Start), formatCueTime(match.End))
+		}
+	}
+	fmt.Fprintf(&text, "Captions (%s), %s to %s:\n%s", index.Source, formatCueTime(start), formatCueTime(end), captions)
+	return []mcpContent{{Type: "text", Text: text.String()}}, nil
 }
 
 func formatCueTime(seconds float64) string {

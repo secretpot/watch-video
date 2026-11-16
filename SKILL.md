@@ -13,7 +13,7 @@ Use source chapter times to organize a long overview and locate follow-ups. Star
 
 When this skill's MCP tools are available, call `video_evidence` for the overview or `video_frame` for a known visual moment. Each returns the image and its time references together. Pass a URL or absolute local video path and reuse the returned local path for follow-up. For a user-supplied frame timestamp, pass it as written, including for requests such as “around 00:16”.
 
-For exact dialogue or cue times in a follow-up, call `video_captions` with the caption reference from the overview and the relevant source interval. Use a small margin around approximate times so complete cues fit. For missing evidence or a new visual range, call `video_evidence` on the narrower window.
+For exact dialogue or cue times, call `video_captions` with the caption reference and a short interval. Pass any words the user supplies as `quote` and use the matched text and span together. For a quote chosen from the result, take the start of its first quoted cue and the end of its last quoted cue. For missing evidence or a new visual range, call `video_evidence` on the narrower window.
 
 ## Shell fallback
 

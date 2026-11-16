@@ -154,6 +154,15 @@ Crosses end
 	if content[0].Text != want {
 		t.Fatalf("unexpected caption cues: %q", content[0].Text)
 	}
+	quoteArgs, err := json.Marshal(map[string]string{"evidence": reference, "start": "00:04", "end": "00:08", "quote": "H100, 2023 H200"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoteResult, err := runVideoMCPTool(t.Context(), scratch, "", videoCaptionsTool, quoteArgs)
+	prefix := "Matched quote: H100 2023 H200\nQuote span: 00:00:04.120000 --> 00:00:06.000000\n"
+	if err != nil || len(quoteResult) != 1 || quoteResult[0].Type != "text" || quoteResult[0].Text != prefix+want {
+		t.Fatalf("unexpected quote result: %+v, %v", quoteResult, err)
+	}
 	for _, invalid := range []struct {
 		name, scratch, reference, start, end, reason string
 	}{
