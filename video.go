@@ -50,6 +50,7 @@ func probeVideo(ctx context.Context, tools toolset, input string) (mediaInfo, er
 	}
 	var probe struct {
 		Format struct {
+			Name     string `json:"format_name"`
 			Start    string `json:"start_time"`
 			Duration string `json:"duration"`
 		} `json:"format"`
@@ -128,6 +129,10 @@ func probeVideo(ctx context.Context, tools toolset, input string) (mediaInfo, er
 	// A muxer can include a leading timestamp offset in its reported duration.
 	if (allEndsKnown && knownEnd > 0) || info.Duration <= 0 {
 		info.Duration = knownEnd
+	} else if probe.Format.Name == "matroska,webm" && info.StartTime > 0 && info.Duration > info.StartTime {
+		// Matroska stores the segment endpoint from timestamp zero. Frame and
+		// subtitle extraction use the first media timestamp as their origin.
+		info.Duration -= info.StartTime
 	}
 	if info.Duration <= 0 {
 		return mediaInfo{}, fmt.Errorf("input has no known positive duration")

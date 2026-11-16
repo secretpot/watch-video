@@ -72,6 +72,19 @@ func TestFocusUsesSourceTimestampsForOffsetVFR(t *testing.T) {
 	}
 }
 
+func TestProbeNormalizesOffsetMatroskaDuration(t *testing.T) {
+	tools := videoTools(t)
+	input := writeVideoFixture(t, "offset.mkv", "-f", "lavfi", "-i", "testsrc2=size=64x64:rate=10:duration=2",
+		"-output_ts_offset", "7")
+	info, err := probeVideo(t.Context(), tools, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.StartTime != 7 || info.Duration != 2 {
+		t.Fatalf("got origin %g and duration %g, want origin 7 and duration 2", info.StartTime, info.Duration)
+	}
+}
+
 func TestOverviewAcceptsSingleFrame(t *testing.T) {
 	tools := videoTools(t)
 	ctx := t.Context()
