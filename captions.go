@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -125,7 +126,8 @@ func transcribeWindow(ctx context.Context, tools toolset, info mediaInfo, start,
 	if language == "" {
 		language = "auto"
 	}
-	_, _, err = tools.run(ctx, "whisper-cli", "-m", model, "-f", wav, "-l", language, "-osrt", "-of", prefix)
+	// Agent processes may lack Metal access even when Whisper can see the GPU.
+	_, _, err = tools.run(ctx, "whisper-cli", "-ng", "-m", model, "-f", wav, "-l", language, "-osrt", "-of", prefix)
 	if err != nil {
 		return nil, fmt.Errorf("transcribe selected audio with Whisper: %w", err)
 	}
@@ -133,10 +135,30 @@ func transcribeWindow(ctx context.Context, tools toolset, info mediaInfo, start,
 	if err != nil {
 		return nil, fmt.Errorf("read Whisper transcript: %w", err)
 	}
-	return captionsInWindow(data, start, end, start)
+	return whisperCues(data, start, end)
+}
+
+func whisperCues(data []byte, start, end float64) ([]captionCue, error) {
+	cues, err := parseCaptions(data, start)
+	if err != nil {
+		return nil, err
+	}
+	// Whisper's estimated timestamp can outlast its WAV. It only received audio up to end.
+	for i := range cues {
+		cues[i].End = min(cues[i].End, end)
+	}
+	return slices.DeleteFunc(cues, func(cue captionCue) bool { return cue.Start >= cue.End }), nil
 }
 
 func captionsInWindow(data []byte, start, end, offset float64) ([]captionCue, error) {
+	cues, err := parseCaptions(data, offset)
+	if err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(cues, func(cue captionCue) bool { return cue.Start < start || cue.End > end }), nil
+}
+
+func parseCaptions(data []byte, offset float64) ([]captionCue, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("subtitle content must be UTF-8")
 	}
@@ -172,9 +194,6 @@ func captionsInWindow(data []byte, start, end, offset float64) ([]captionCue, er
 		cueEnd, endOK := parseCaptionTimestamp(fields[0], offset)
 		if !startOK || !endOK || cueEnd <= cueStart {
 			return nil, fmt.Errorf("invalid subtitle timing at line %d", lineNumber)
-		}
-		if cueStart < start || cueEnd > end {
-			continue
 		}
 		payload := strings.TrimSpace(html.UnescapeString(captionMarkup.ReplaceAllString(strings.Join(block[1:], "\n"), "")))
 		if payload != "" {

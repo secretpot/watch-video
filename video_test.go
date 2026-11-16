@@ -33,7 +33,7 @@ func TestFocusUsesSourceTimestampsForOffsetVFR(t *testing.T) {
 	tools := videoTools(t)
 	ctx := t.Context()
 	input := writeVideoFixture(t, "直式 片段.mp4", "-f", "lavfi", "-i", "testsrc2=size=96x160:rate=10:duration=1",
-		"-vf", "select='not(mod(n,3))+eq(n,1)',setpts=PTS+8/TB", "-fps_mode", "passthrough")
+		"-vf", "select='not(mod(n,3))+eq(n,1)',setpts=PTS+8/TB", "-fps_mode", "passthrough", "-video_track_timescale", "10")
 	info, err := probeVideo(ctx, tools, input)
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +61,14 @@ func TestFocusUsesSourceTimestampsForOffsetVFR(t *testing.T) {
 	config, err := jpeg.DecodeConfig(file)
 	if err != nil || config.Width != 96 || config.Height != 160 {
 		t.Fatalf("portrait JPEG was not preserved: %+v %v", config, err)
+	}
+	value, err = renderVideo(ctx, tools, info, 0.59, 0.61, t.TempDir(), true, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := value.(renderedVideo).Frames
+	if len(frames) != 1 || math.Abs(frames[0].Time-0.6) > 1e-6 {
+		t.Fatalf("a frame just inside a fractional cutoff was lost: %+v", frames)
 	}
 }
 

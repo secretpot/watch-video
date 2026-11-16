@@ -24,12 +24,12 @@ const (
 )
 
 type mediaInfo struct {
-	Input     string       `json:"input"`
-	Duration  float64      `json:"duration"`
-	StartTime float64      `json:"start_time"`
-	Video     streamInfo   `json:"video"`
-	Audio     []streamInfo `json:"audio"`
-	Subtitles []streamInfo `json:"subtitles"`
+	Input         string       `json:"input"`
+	Duration      float64      `json:"duration"`
+	StartTime     float64      `json:"start_time"`
+	Video         streamInfo   `json:"video"`
+	Audio         []streamInfo `json:"audio"`
+	Subtitles     []streamInfo `json:"subtitles"`
 	videoTimeBase timeBase
 }
 
@@ -314,7 +314,7 @@ func extractFrame(ctx context.Context, tools toolset, info mediaInfo, start, end
 }
 
 var (
-	frameTimeBase = regexp.MustCompile(`time_base:\s*(\d+)/(\d+)`)
+	frameTimeBase = regexp.MustCompile(`config in time_base:\s*(\d+)/(\d+)`)
 	framePTS      = regexp.MustCompile(`\bpts:\s*(-?\d+)\s+pts_time:`)
 )
 

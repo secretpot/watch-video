@@ -26,12 +26,12 @@ func TestCaptionsFilterWebVTTByRequestedWindow(t *testing.T) {
 }
 
 func TestCaptionsShiftSpeechToVideoTimeline(t *testing.T) {
-	input := []byte("1\n00:00:00,100 --> 00:00:00,400\nA line\n\n2\n00:00:00,400 --> 00:00:01,100\nOut of scope\n")
-	got, err := captionsInWindow(input, 21.1, 22.1, 21.1)
+	input := []byte("1\n00:00:00,100 --> 00:00:00,400\nA line\n\n2\n00:00:00,400 --> 00:00:01,100\nEstimated end after audio\n\n3\n00:00:01,100 --> 00:00:01,500\nOut of scope\n")
+	got, err := whisperCues(input, 21.1, 22.1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []captionCue{{Start: 21.2, End: 21.5, Text: "A line"}}
+	want := []captionCue{{Start: 21.2, End: 21.5, Text: "A line"}, {Start: 21.5, End: 22.1, Text: "Estimated end after audio"}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cues = %#v; want %#v", got, want)
 	}
