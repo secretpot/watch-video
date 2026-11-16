@@ -86,6 +86,7 @@ func fetchVideo(ctx context.Context, tools toolset, input, out string, options f
 	args := append(common,
 		"--match-filter", "!is_live & !is_upcoming",
 		"--format", "bv[height<=720]+ba/b[height<=720]/b[height<=?720]/bv[height<=?720]",
+		"--concurrent-fragments", "4",
 		"--paths", out, "--output", "source.%(ext)s",
 		"--print", "after_move:%(filepath)j", "--no-progress",
 	)

@@ -48,7 +48,7 @@ For a skill-enabled agent, place the extracted `watch-video` folder in its skill
 
 ### Optional tools
 
-- **Public recordings.** Put the official `yt-dlp_macos` or Windows `yt-dlp.exe` on `PATH` under the command name `yt-dlp`. Some sites need an additional JavaScript runtime. Support depends on the upstream extractor and the site's ability to deliver an anonymous recording. [yt-dlp release files](https://github.com/yt-dlp/yt-dlp#release-files) · [YouTube setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
+- **Public recordings.** Put the official `yt-dlp_macos` or Windows `yt-dlp.exe` on `PATH` under the command name `yt-dlp`. Some sites need an additional JavaScript runtime. Support depends on the upstream extractor and the site's ability to deliver an anonymous recording. Native HLS and DASH downloads use up to four concurrent fragments. [yt-dlp release files](https://github.com/yt-dlp/yt-dlp#release-files) · [YouTube setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
 
 ### Local speech recognition
 
