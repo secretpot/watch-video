@@ -30,6 +30,9 @@ func TestEvidenceIncludesStoryboardAndWindowedCaptions(t *testing.T) {
 	if result.Video != input || result.Start != 15 || result.End != 17 || len(result.Images) != 1 || result.Captions.Source != "sidecar" {
 		t.Fatalf("unexpected evidence: %+v", result)
 	}
+	if len(result.Frames) != 2 || result.Images[0].Width != 128 || result.Images[0].Height != 64 {
+		t.Fatalf("expected two source-size tiles without the empty rows: %+v", result.renderedVideo)
+	}
 	for _, frame := range result.Frames {
 		if frame.Time < result.Start || frame.Time >= result.End {
 			t.Fatalf("frame outside requested window: %+v", frame)

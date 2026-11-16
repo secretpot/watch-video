@@ -368,7 +368,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		if atArg != "" {
 			return renderFocusAt(ctx, tools, info, start, end, dir)
 		}
-		return renderVideo(ctx, tools, info, start, end, dir, command == "focus", frames)
+		return renderVideo(ctx, tools, info, start, end, dir, videoLayout{focusFrames: frames})
 	})
 }
 

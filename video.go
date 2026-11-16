@@ -195,7 +195,14 @@ func (result *renderedVideo) addFocusFrame(out string, frame image.Image, pts fl
 	return nil
 }
 
-func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out string, focus bool, frames int) (renderedVideo, error) {
+type videoLayout struct {
+	focusFrames int
+	packTiles   bool
+}
+
+func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out string, layout videoLayout) (renderedVideo, error) {
+	frames := layout.focusFrames
+	focus := frames > 0
 	width, height := sheetWidth/sheetSide, sheetHeight/sheetSide
 	var cuts []float64
 	if focus {
@@ -209,10 +216,7 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 		}
 	}
 	result := renderedVideo{Start: start, End: end}
-	var sheet *image.RGBA
-	if !focus {
-		sheet = image.NewRGBA(image.Rect(0, 0, sheetWidth, sheetHeight))
-	}
+	var tiles []image.Image
 	lastTime := math.Inf(-1)
 	for i := range frames {
 		binStart := start + (end-start)*float64(i)/float64(frames)
@@ -244,22 +248,43 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 		}
 		index := len(result.Frames)
 		row, column := index/sheetSide, index%sheetSide
-		x := column*width + (width-frame.Bounds().Dx())/2
-		y := row*height + (height-frame.Bounds().Dy())/2
-		dst := image.Rect(x, y, x+frame.Bounds().Dx(), y+frame.Bounds().Dy())
-		draw.Draw(sheet, dst, frame, frame.Bounds().Min, draw.Src)
+		tiles = append(tiles, frame)
 		result.Frames = append(result.Frames, frameIndex{Time: pts, Image: "overview.jpg", Row: row + 1, Column: column + 1})
 	}
 	if len(result.Frames) == 0 {
 		return renderedVideo{}, fmt.Errorf("no video frames have presentation times in [%.3f, %.3f)", start, end)
 	}
 	if !focus {
+		sheet := drawStoryboard(tiles, layout.packTiles)
 		if err := writeJPEG(filepath.Join(out, "overview.jpg"), sheet); err != nil {
 			return renderedVideo{}, err
 		}
-		result.Images = []imageFile{{Path: "overview.jpg", Width: sheetWidth, Height: sheetHeight}}
+		result.Images = []imageFile{{Path: "overview.jpg", Width: sheet.Bounds().Dx(), Height: sheet.Bounds().Dy()}}
 	}
 	return result, nil
+}
+
+func drawStoryboard(tiles []image.Image, pack bool) *image.RGBA {
+	width, height := sheetWidth/sheetSide, sheetHeight/sheetSide
+	columns, rows := sheetSide, sheetSide
+	if pack {
+		// Keep every decoded pixel and remove only unused space in the grid.
+		width, height = 0, 0
+		for _, tile := range tiles {
+			width = max(width, tile.Bounds().Dx())
+			height = max(height, tile.Bounds().Dy())
+		}
+		columns = min(sheetSide, len(tiles))
+		rows = (len(tiles) + sheetSide - 1) / sheetSide
+	}
+	sheet := image.NewRGBA(image.Rect(0, 0, columns*width, rows*height))
+	for index, tile := range tiles {
+		bounds := tile.Bounds()
+		x := (index%sheetSide)*width + (width-bounds.Dx())/2
+		y := (index/sheetSide)*height + (height-bounds.Dy())/2
+		draw.Draw(sheet, image.Rect(x, y, x+bounds.Dx(), y+bounds.Dy()), tile, bounds.Min, draw.Src)
+	}
+	return sheet
 }
 
 func sampleTarget(cuts []float64, start, end float64) float64 {

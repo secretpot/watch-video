@@ -71,20 +71,37 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 		return result, err
 	}
 	result.Video, result.Duration = input, info.Duration
-	result.renderedVideo, err = renderVideo(ctx, tools, info, start, end, out, false, 0)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type cueResult struct {
+		captions captionsResult
+		status   string
+		err      error
+	}
+	cueReady := make(chan cueResult)
+	go func() {
+		captions, status, err := evidenceCueData(ctx, tools, info, start, end, out, options)
+		cueReady <- cueResult{captions: captions, status: status, err: err}
+	}()
+	result.renderedVideo, err = renderVideo(ctx, tools, info, start, end, out, videoLayout{packTiles: true})
+	if err != nil {
+		cancel()
+	}
+	// Wait for caption processing to finish before the output directory can be removed.
+	cue := <-cueReady
 	if err != nil {
 		return result, err
 	}
-	captions, status, err := evidenceCueData(ctx, tools, info, start, end, out, options)
-	if err != nil {
+	if cue.err != nil {
 		if ctx.Err() != nil {
 			return result, ctx.Err()
 		}
-		result.Captions = evidenceCaptions{Source: "none", Status: "error", Error: err.Error()}
+		result.Captions = evidenceCaptions{Source: "none", Status: "error", Error: cue.err.Error()}
 		return result, nil
 	}
+	captions := cue.captions
 	if captions.Source == "none" {
-		result.Captions = evidenceCaptions{Source: "none", Status: status}
+		result.Captions = evidenceCaptions{Source: "none", Status: cue.status}
 		return result, nil
 	}
 	const index = "captions.json"

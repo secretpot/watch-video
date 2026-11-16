@@ -42,7 +42,7 @@ func TestFocusUsesSourceTimestampsForOffsetVFR(t *testing.T) {
 		t.Fatalf("unexpected probe: %+v", info)
 	}
 	out := t.TempDir()
-	result, err := renderVideo(ctx, tools, info, 0.08, 0.6, out, true, 6)
+	result, err := renderVideo(ctx, tools, info, 0.08, 0.6, out, videoLayout{focusFrames: 6})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestFocusUsesSourceTimestampsForOffsetVFR(t *testing.T) {
 	if err != nil || config.Width != 96 || config.Height != 160 {
 		t.Fatalf("portrait JPEG was not preserved: %+v %v", config, err)
 	}
-	result, err = renderVideo(ctx, tools, info, 0.59, 0.61, t.TempDir(), true, 1)
+	result, err = renderVideo(ctx, tools, info, 0.59, 0.61, t.TempDir(), videoLayout{focusFrames: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestOverviewAcceptsSingleFrame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := renderVideo(ctx, tools, info, 0, info.Duration, t.TempDir(), false, 0)
+	result, err := renderVideo(ctx, tools, info, 0, info.Duration, t.TempDir(), videoLayout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestOverviewPrefersCutWithinBin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := renderVideo(ctx, tools, info, 0, info.Duration, t.TempDir(), false, 0)
+	result, err := renderVideo(ctx, tools, info, 0, info.Duration, t.TempDir(), videoLayout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestLongOverviewShowsBriefInsertBeforeFirstMidpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := t.TempDir()
-	result, err := renderVideo(ctx, tools, info, 0, info.Duration, out, false, 0)
+	result, err := renderVideo(ctx, tools, info, 0, info.Duration, out, videoLayout{})
 	if err != nil {
 		t.Fatal(err)
 	}
