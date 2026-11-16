@@ -84,7 +84,7 @@ watch-video fetch "https://interactive-examples.mdn.mozilla.net/media/cc0-videos
 
 For long ranges covered by two to nine consecutive source chapters, the overview uses a frame from each chapter and fills the remaining tiles from the longest intervals. The resulting index includes chapter ranges. For other ranges, the overview uses the scene scan.
 
-`captions` can read a same-name or explicitly supplied subtitle and can transcribe with `--whisper-model FILE`. An individual Whisper window is limited to 120 seconds. `evidence` and `captions --batch` split longer requests locally into windows of at most 120 seconds. `fetch` downloads separately when only a reusable local source is needed. Some providers require a local copy. Sampled images can miss brief actions, and image and text token usage depends on the host model.
+`captions` can read a same-name or explicitly supplied subtitle and can transcribe with `--whisper-model FILE`. An individual Whisper window is limited to 120 seconds. `evidence` and `captions --batch` split longer requests locally. They process two windows at once when Go can schedule at least 12 CPU threads and the model file is at most 160 MiB, returning cues in source order. Other configurations use one worker. `fetch` downloads separately when only a reusable local source is needed. Some providers require a local copy. Sampled images can miss brief actions, and image and text token usage depends on the host model.
 
 ## Optional MCP server
 

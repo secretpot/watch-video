@@ -6,12 +6,16 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 )
 
 const (
-	batchTranscript = "captions.txt"
-	transcriptBlock = 15
+	batchTranscript        = "captions.txt"
+	transcriptBlock        = 15
+	whisperParallelMinCPUs = 12
+	whisperParallelMaxSize = 160 * 1024 * 1024
 )
 
 type captionBatchFiles struct {
@@ -53,15 +57,31 @@ func runCaptionBatch(ctx context.Context, tools toolset, info mediaInfo, start, 
 }
 
 func transcribeBatch(ctx context.Context, tools toolset, info mediaInfo, result captionsResult, dir, model, language string) (captionsResult, error) {
+	var windows []captionWindow
 	for from := result.Start; from < result.End; {
 		to := min(from+whisperWindowSeconds, result.End)
-		cues, err := transcribeWindow(ctx, tools, info, from, to, dir, model, language)
-		if err != nil {
-			return captionsResult{}, fmt.Errorf("transcribe %.3f–%.3f s: %w", from, to, err)
-		}
-		result.Cues = append(result.Cues, cues...)
+		windows = append(windows, captionWindow{start: from, end: to})
 		from = to
 	}
+	workers := 1
+	if len(windows) > 1 && runtime.GOMAXPROCS(0) >= whisperParallelMinCPUs {
+		weights, err := os.Stat(model)
+		if err != nil {
+			return captionsResult{}, fmt.Errorf("inspect Whisper weights: %w", err)
+		}
+		// Two four-thread Whisper processes can overlap on this CPU budget.
+		// Reserve the extra process for base-size or smaller weights.
+		if weights.Size() <= whisperParallelMaxSize {
+			workers = 2
+		}
+	}
+	cues, err := transcribeCaptionWindows(ctx, windows, workers, func(ctx context.Context, window captionWindow) ([]captionCue, error) {
+		return transcribeWindow(ctx, tools, info, window.start, window.end, dir, model, language)
+	})
+	if err != nil {
+		return captionsResult{}, err
+	}
+	result.Cues = append(result.Cues, cues...)
 	if len(result.Cues) > 0 {
 		result.Source = "whisper"
 		if language != "auto" {
@@ -69,6 +89,53 @@ func transcribeBatch(ctx context.Context, tools toolset, info mediaInfo, result 
 		}
 	}
 	return result, nil
+}
+
+type captionWindow struct {
+	start float64
+	end   float64
+}
+
+func transcribeCaptionWindows(ctx context.Context, windows []captionWindow, workers int, transcribe func(context.Context, captionWindow) ([]captionCue, error)) ([]captionCue, error) {
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	jobs := make(chan int)
+	batches := make([][]captionCue, len(windows))
+	var group sync.WaitGroup
+	for range workers {
+		group.Go(func() {
+			for i := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				window := windows[i]
+				cues, err := transcribe(ctx, window)
+				if err != nil {
+					cancel(fmt.Errorf("transcribe %.3f–%.3f s: %w", window.start, window.end, err))
+					return
+				}
+				batches[i] = cues
+			}
+		})
+	}
+dispatch:
+	for i := range windows {
+		select {
+		case jobs <- i:
+		case <-ctx.Done():
+			break dispatch
+		}
+	}
+	close(jobs)
+	group.Wait()
+	if err := context.Cause(ctx); err != nil {
+		return nil, err
+	}
+	var cues []captionCue
+	for _, batch := range batches {
+		cues = append(cues, batch...)
+	}
+	return cues, nil
 }
 
 func writeTranscript(dir string, cues []captionCue) error {

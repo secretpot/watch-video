@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestCaptionBatchWritesTextAndKeepsCueManifest(t *testing.T) {
@@ -51,5 +54,69 @@ func TestCaptionBatchWritesTextAndKeepsCueManifest(t *testing.T) {
 	}
 	if len(captions.Cues) != 3 || captions.Cues[2].Start != 16.3 || captions.Cues[2].End != 17.5 {
 		t.Fatalf("cue manifest = %+v", captions)
+	}
+}
+
+func TestParallelCaptionWindowsMergeInSourceOrder(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	windows := []captionWindow{{0, 120}, {120, 240}, {240, 241}}
+	thirdStarted := make(chan struct{})
+	cues, err := transcribeCaptionWindows(ctx, windows, 2, func(ctx context.Context, window captionWindow) ([]captionCue, error) {
+		switch window.start {
+		case 0:
+			// The first interval finishes only after a worker has completed
+			// the second and advanced to the third.
+			select {
+			case <-thirdStarted:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		case 240:
+			close(thirdStarted)
+		}
+		return []captionCue{{Start: window.start, End: window.end}}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cues) != len(windows) {
+		t.Fatalf("got %d cues, want %d", len(cues), len(windows))
+	}
+	for i, cue := range cues {
+		if cue.Start != windows[i].start || cue.End != windows[i].end {
+			t.Fatalf("cue %d = %+v, want window %+v", i, cue, windows[i])
+		}
+	}
+}
+
+func TestParallelCaptionWindowsCancelAndJoinAfterError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	windows := []captionWindow{{0, 120}, {120, 240}}
+	siblingStarted := make(chan struct{})
+	siblingStopped := make(chan struct{})
+	failure := errors.New("Whisper failed")
+	_, err := transcribeCaptionWindows(ctx, windows, 2, func(ctx context.Context, window captionWindow) ([]captionCue, error) {
+		if window.start == 0 {
+			select {
+			case <-siblingStarted:
+				return nil, failure
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		close(siblingStarted)
+		<-ctx.Done()
+		close(siblingStopped)
+		return nil, ctx.Err()
+	})
+	if !errors.Is(err, failure) || !strings.Contains(err.Error(), "transcribe 0.000–120.000 s") {
+		t.Fatalf("got %v, want first interval error", err)
+	}
+	select {
+	case <-siblingStopped:
+	default:
+		t.Fatal("sibling still running after return")
 	}
 }
