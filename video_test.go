@@ -121,3 +121,38 @@ func TestOverviewPrefersCutWithinBin(t *testing.T) {
 		t.Fatalf("expected 9 frames with a cut at 3.1 seconds in bin four: %+v", result.Frames)
 	}
 }
+
+func TestLongOverviewShowsBriefInsertBeforeFirstMidpoint(t *testing.T) {
+	tools := videoTools(t)
+	ctx := t.Context()
+	input := writeVideoFixture(t, "long.mp4",
+		"-f", "lavfi", "-i", "color=black:s=64x64:r=2:d=2",
+		"-f", "lavfi", "-i", "color=white:s=64x64:r=2:d=4",
+		"-f", "lavfi", "-i", "color=black:s=64x64:r=2:d=130",
+		"-filter_complex", "[0:v][1:v][2:v]concat=n=3:v=1:a=0")
+	info, err := probeVideo(ctx, tools, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	result, err := renderVideo(ctx, tools, info, 0, info.Duration, out, false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Frames) != 9 || len(result.Images) != 1 || result.Frames[0].Time != 4 {
+		t.Fatalf("expected one scene-aware overview with the insert at 4 s: %+v", result)
+	}
+	file, err := os.Open(filepath.Join(out, result.Images[0].Path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	sheet, err := jpeg.Decode(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	red, green, blue, _ := sheet.At(160, 90).RGBA()
+	if red < 60000 || green < 60000 || blue < 60000 {
+		t.Fatal("first tile does not show the white insert between the two cuts")
+	}
+}

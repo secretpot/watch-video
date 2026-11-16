@@ -8,6 +8,8 @@ license: MIT
 
 Use the video and question from the request or conversation. `@watch-video` with a URL or file requests a concise, timestamped overview.
 
+For a whole-video overview, group the main developments chronologically across the beginning, middle, and ending. Use captions throughout the requested span for narration and the storyboard for visual claims.
+
 When this skill's MCP tools are available, call `video_evidence` for the overview or `video_frame` for a known moment. Each returns the image and its time references together. Pass a URL or absolute local video path and reuse the returned local path for follow-up. For a user-supplied timestamp, pass it as written, including for requests such as “around 00:16”. Use a narrower `video_evidence` window when the answer needs more scene or dialogue evidence.
 
 ## Shell fallback

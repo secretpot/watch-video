@@ -202,12 +202,10 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 		width, height = focusSize, focusSize
 	} else {
 		frames = sheetSide * sheetSide
-		if end-start <= 120 {
-			var err error
-			cuts, err = sceneCuts(ctx, tools, info, start, end)
-			if err != nil {
-				return renderedVideo{}, err
-			}
+		var err error
+		cuts, err = sceneCuts(ctx, tools, info, start, end)
+		if err != nil {
+			return renderedVideo{}, err
 		}
 	}
 	result := renderedVideo{Start: start, End: end}
@@ -266,13 +264,33 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 
 func sampleTarget(cuts []float64, start, end float64) float64 {
 	mid := start + (end-start)/2
-	best, distance := mid, math.Inf(1)
+	bestCut, cutDistance := mid, math.Inf(1)
+	bestScene, sceneDistance := mid, math.Inf(1)
+	previous := math.Inf(-1)
 	for _, cut := range cuts {
-		if cut >= start && cut < end && math.Abs(cut-mid) < distance {
-			best, distance = cut, math.Abs(cut-mid)
+		if cut < start {
+			continue
 		}
+		if cut >= end {
+			break
+		}
+		if distance := math.Abs(cut - mid); distance < cutDistance {
+			bestCut, cutDistance = cut, distance
+		}
+		// Two boundaries in the same bin can delimit footage that a uniform
+		// midpoint misses. Sample inside it rather than on its removal cut.
+		if previous >= start && cut > previous {
+			center := previous + (cut-previous)/2
+			if distance := math.Abs(center - mid); distance < sceneDistance {
+				bestScene, sceneDistance = center, distance
+			}
+		}
+		previous = cut
 	}
-	return best
+	if !math.IsInf(sceneDistance, 1) {
+		return bestScene
+	}
+	return bestCut
 }
 
 func videoDecodeArgs(info mediaInfo, start float64) []string {
@@ -306,7 +324,15 @@ func trimVideo(base timeBase, start, end float64) string {
 
 func sceneCuts(ctx context.Context, tools toolset, info mediaInfo, start, end float64) ([]float64, error) {
 	args := videoDecodeArgs(info, start)
-	filter := trimVideo(info.videoTimeBase, start, end) + ",scale=320:180:force_original_aspect_ratio=decrease:reset_sar=1,scdet=sc_pass=1,showinfo=checksum=0"
+	filter := trimVideo(info.videoTimeBase, start, end)
+	size := "320:180"
+	if end-start > 120 {
+		// Sample the scan at up to two frames per second without rewriting PTS.
+		// The overview still seeks the selected frames at source quality.
+		filter += ",select='isnan(prev_selected_t)+gte(t-prev_selected_t,0.5)'"
+		size = "160:90"
+	}
+	filter += ",scale=" + size + ":force_original_aspect_ratio=decrease:reset_sar=1,scdet=sc_pass=1,showinfo=checksum=0"
 	_, stderr, err := tools.run(ctx, "ffmpeg", append(args, "-vf", filter, "-fps_mode", "passthrough", "-f", "null", "-")...)
 	if err != nil {
 		return nil, err
