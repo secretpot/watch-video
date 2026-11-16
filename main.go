@@ -300,7 +300,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	if command == "fetch" {
 		return withOutput(out, command, stdout, func(dir string) (any, error) {
-			return fetchVideo(ctx, tools, input, subtitleLanguage, dir)
+			return fetchVideo(ctx, tools, input, dir, fetchOptions{subtitleLanguage: subtitleLanguage})
 		})
 	}
 	if command == "evidence" {

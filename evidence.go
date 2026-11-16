@@ -47,7 +47,10 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 		}
 	}
 	if strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://") {
-		download, err := fetchVideo(ctx, tools, input, options.subtitleLanguage, out)
+		download, err := fetchVideo(ctx, tools, input, out, fetchOptions{
+			subtitleLanguage: options.subtitleLanguage,
+			autoSubtitle:     options.subtitle == "" && !options.noASR,
+		})
 		if err != nil {
 			return result, err
 		}

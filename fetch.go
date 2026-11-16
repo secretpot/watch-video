@@ -21,13 +21,37 @@ type fetchedVideo struct {
 	Chapters []videoChapter `json:"chapters,omitempty"`
 }
 
-func fetchVideo(ctx context.Context, tools toolset, input, language, out string) (fetchedVideo, error) {
+type fetchOptions struct {
+	subtitleLanguage string
+	autoSubtitle     bool
+}
+
+type fetchMetadata struct {
+	Type       string                       `json:"_type"`
+	IsLive     bool                         `json:"is_live"`
+	LiveStatus string                       `json:"live_status"`
+	Chapters   []videoChapter               `json:"chapters"`
+	Language   string                       `json:"language"`
+	Subtitles  map[string][]json.RawMessage `json:"subtitles"`
+}
+
+func fetchSubtitleLanguage(options fetchOptions, item fetchMetadata) (language string, optional bool) {
+	if options.subtitleLanguage != "" {
+		return options.subtitleLanguage, false
+	}
+	if options.autoSubtitle && languageTag.MatchString(item.Language) && len(item.Subtitles[item.Language]) != 0 {
+		return item.Language, true
+	}
+	return "", false
+}
+
+func fetchVideo(ctx context.Context, tools toolset, input, out string, options fetchOptions) (fetchedVideo, error) {
 	parsed, err := url.Parse(input)
 	if err != nil || parsed.Hostname() == "" || parsed.User != nil ||
 		(parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return fetchedVideo{}, errors.New("fetch requires a public HTTP(S) URL without credentials")
 	}
-	if language != "" && !languageTag.MatchString(language) {
+	if options.subtitleLanguage != "" && !languageTag.MatchString(options.subtitleLanguage) {
 		return fetchedVideo{}, errors.New("--subtitle-lang requires one exact language tag, such as en or zh-Hans")
 	}
 	for _, tool := range []string{"ffmpeg", "ffprobe"} {
@@ -49,12 +73,7 @@ func fetchVideo(ctx context.Context, tools toolset, input, language, out string)
 	if err != nil {
 		return fetchedVideo{}, err
 	}
-	var item struct {
-		Type       string         `json:"_type"`
-		IsLive     bool           `json:"is_live"`
-		LiveStatus string         `json:"live_status"`
-		Chapters   []videoChapter `json:"chapters"`
-	}
+	var item fetchMetadata
 	if err := json.Unmarshal(metadata, &item); err != nil {
 		return fetchedVideo{}, fmt.Errorf("read yt-dlp metadata: %w", err)
 	}
@@ -63,12 +82,18 @@ func fetchVideo(ctx context.Context, tools toolset, input, language, out string)
 		return fetchedVideo{}, errors.New("URL must resolve to a single completed recording")
 	}
 
+	language, optionalSubtitle := fetchSubtitleLanguage(options, item)
 	args := append(common,
 		"--match-filter", "!is_live & !is_upcoming",
 		"--format", "bv[height<=720]+ba/b[height<=720]/b[height<=?720]/bv[height<=?720]",
 		"--paths", out, "--output", "source.%(ext)s",
 		"--print", "after_move:%(filepath)j", "--no-progress",
 	)
+	if optionalSubtitle {
+		// yt-dlp skips an unavailable subtitle and continues downloading the video.
+		// A nonzero exit or missing final media path still fails the request.
+		args = append(args, "--ignore-errors")
+	}
 	if language != "" {
 		args = append(args, "--write-subs", "--sub-langs", "^"+regexp.QuoteMeta(language)+"$",
 			"--sub-format", "vtt/srt/best", "--convert-subs", "srt")
