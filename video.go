@@ -168,18 +168,45 @@ type frameIndex struct {
 	Column int     `json:"column,omitempty"`
 }
 
-func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out string, focus bool, frames int) (any, error) {
+const focusSize = 1280
+
+func renderFocusAt(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out string) (renderedVideo, error) {
+	result := renderedVideo{Start: start, End: end}
+	frame, pts, err := extractFrame(ctx, tools, info, start, end, focusSize, focusSize)
+	if err != nil {
+		return renderedVideo{}, err
+	}
+	if frame == nil || pts < start || pts >= end {
+		return renderedVideo{}, fmt.Errorf("no video frame at or after %.3f s before cutoff %.3f s", start, end)
+	}
+	if err := result.addFocusFrame(out, frame, pts); err != nil {
+		return renderedVideo{}, err
+	}
+	return result, nil
+}
+
+func (result *renderedVideo) addFocusFrame(out string, frame image.Image, pts float64) error {
+	name := fmt.Sprintf("frame-%02d.jpg", len(result.Frames)+1)
+	if err := writeJPEG(filepath.Join(out, name), frame); err != nil {
+		return err
+	}
+	result.Frames = append(result.Frames, frameIndex{Time: pts, Image: name})
+	result.Images = append(result.Images, imageFile{Path: name, Width: frame.Bounds().Dx(), Height: frame.Bounds().Dy()})
+	return nil
+}
+
+func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out string, focus bool, frames int) (renderedVideo, error) {
 	width, height := sheetWidth/sheetSide, sheetHeight/sheetSide
 	var cuts []float64
 	if focus {
-		width, height = 1280, 1280
+		width, height = focusSize, focusSize
 	} else {
 		frames = sheetSide * sheetSide
 		if end-start <= 120 {
 			var err error
 			cuts, err = sceneCuts(ctx, tools, info, start, end)
 			if err != nil {
-				return nil, err
+				return renderedVideo{}, err
 			}
 		}
 	}
@@ -198,13 +225,13 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 		target := sampleTarget(cuts, binStart, binEnd)
 		frame, pts, err := extractFrame(ctx, tools, info, target, binEnd, width, height)
 		if err != nil {
-			return nil, err
+			return renderedVideo{}, err
 		}
 		if frame == nil && target > binStart {
 			// A short or variable-rate bin can contain a frame only before its midpoint.
 			frame, pts, err = extractFrame(ctx, tools, info, binStart, binEnd, width, height)
 			if err != nil {
-				return nil, err
+				return renderedVideo{}, err
 			}
 		}
 		if frame == nil || pts < start || pts >= end || pts <= lastTime {
@@ -212,12 +239,9 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 		}
 		lastTime = pts
 		if focus {
-			name := fmt.Sprintf("frame-%02d.jpg", len(result.Frames)+1)
-			if err := writeJPEG(filepath.Join(out, name), frame); err != nil {
-				return nil, err
+			if err := result.addFocusFrame(out, frame, pts); err != nil {
+				return renderedVideo{}, err
 			}
-			result.Frames = append(result.Frames, frameIndex{Time: pts, Image: name})
-			result.Images = append(result.Images, imageFile{Path: name, Width: frame.Bounds().Dx(), Height: frame.Bounds().Dy()})
 			continue
 		}
 		index := len(result.Frames)
@@ -229,11 +253,11 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 		result.Frames = append(result.Frames, frameIndex{Time: pts, Image: "overview.jpg", Row: row + 1, Column: column + 1})
 	}
 	if len(result.Frames) == 0 {
-		return nil, fmt.Errorf("no video frames have presentation times in [%.3f, %.3f)", start, end)
+		return renderedVideo{}, fmt.Errorf("no video frames have presentation times in [%.3f, %.3f)", start, end)
 	}
 	if !focus {
 		if err := writeJPEG(filepath.Join(out, "overview.jpg"), sheet); err != nil {
-			return nil, err
+			return renderedVideo{}, err
 		}
 		result.Images = []imageFile{{Path: "overview.jpg", Width: sheetWidth, Height: sheetHeight}}
 	}

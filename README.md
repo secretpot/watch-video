@@ -9,7 +9,7 @@ Give a vision-capable model one contact sheet with timestamps, then inspect only
 @watch-video <video_url> 这个视频说了什么
 ```
 
-With just the link, the agent gives a timestamped overview. It starts with a compact storyboard and uses the video's content and your question to decide when to inspect a scene, read subtitles, or transcribe speech. Follow-up questions can go straight to the relevant interval using the video and timestamps already in the conversation.
+With just the link, the agent gives a timestamped overview. A single CLI call prepares the local video, a compact storyboard, and timestamped text when available. Follow-up questions reuse that video and inspect only the relevant moment or interval.
 
 When the host passes `@watch-video` as text, the installed Skill can be selected from its name and description. For native explicit selection, use `$watch-video` in Codex or select `watch-video` from DeepSeek Harness's `/` menu, followed by the same URL and optional question. [Codex skill selection](https://developers.openai.com/blog/eval-skills#3-manually-trigger-the-skill-to-expose-hidden-assumptions) · [DeepSeek Harness skill selection](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-skill/README.md#use-this-package)
 
@@ -61,13 +61,15 @@ Download the multilingual [ggml-base-q5_1.bin model](https://huggingface.co/gger
 | macOS | `~/Library/Application Support/watch-video/ggml-base-q5_1.bin` |
 | Windows | `%LOCALAPPDATA%\watch-video\ggml-base-q5_1.bin` |
 
-The Skill uses this path when speech is needed and usable subtitles are unavailable. CLI users can supply a different compatible model with `--whisper-model`. Whisper runs on the CPU and estimates when each phrase was spoken. If Windows Whisper rejects a model path containing non-ASCII characters, use an ASCII-only model path with the CLI option. [Whisper Windows path issue](https://github.com/ggml-org/whisper.cpp/issues/4018)
+`evidence` checks this path automatically when usable subtitles are unavailable. Pass `--whisper-model FILE` to select a different compatible model or `--no-asr` for visual tasks. Whisper runs on the CPU and estimates when each phrase was spoken. If Windows Whisper rejects a model path containing non-ASCII characters, use an ASCII-only model path with the CLI option. [Whisper Windows path issue](https://github.com/ggml-org/whisper.cpp/issues/4018)
 
 ## CLI reference
 
 Use the executable path in place of `watch-video` below, or add its `bin` folder to `PATH`. Pass an unused path to `--out` and let the CLI create the directory.
 
 ```text
+watch-video evidence "clip.mp4" --out evidence
+watch-video focus "clip.mp4" --at 00:16 --out detail
 watch-video probe "clip.mp4"
 watch-video overview "clip.mp4" --out overview
 watch-video focus "clip.mp4" --start 1 --end 3 --frames 3 --out focus
@@ -76,11 +78,40 @@ watch-video captions "clip.mp4" --batch --whisper-model "model.bin" --out transc
 watch-video fetch "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" --out download
 ```
 
-`overview` produces at most nine tiles in one 960×540 JPEG. `focus` writes individual JPEGs with a long edge up to 1280 pixels. Their JSON files are the time index. Use `--start` and `--end` in seconds on the original video timeline, including for spoiler-free viewing. `captions` can find a same-name SRT or VTT beside the video, or read a sidecar specified with `--subtitle`. If there are no usable cues in that interval, add `--whisper-model FILE` for local transcription.
+`evidence` accepts a local file or a single public HTTP(S) recording. For a known subtitle language on a video platform, pass `--subtitle-lang CODE`. Read the returned index for the absolute local video path, the JPEG path and tile times, and available caption artifacts. Captions use an explicit or adjacent SRT/VTT, then an embedded text track, then local Whisper. If captions are unavailable, the index reports why and retains the storyboard and any downloaded video. The compact `captions.txt` is for an overview and `captions.json` keeps individual cue boundaries.
 
-An individual Whisper window is limited to 120 seconds. When the task needs speech across a longer interval, `--batch` splits it locally in one command. It prints only a file index and cue count. Read `captions.txt` for compact timestamped text and `captions.json` for individual cue boundaries. A supplied range still limits the evidence to the portion requested.
+`overview` produces at most nine tiles in one 960×540 JPEG. `focus` writes JPEGs with a long edge up to 1280 pixels. `--at` takes the first source frame at or after the requested moment, before any `--end` cutoff. The index reports the actual frame time. Use seconds, `MM:SS`, or `HH:MM:SS` for all command time arguments. Ranges are on the original video timeline with an exclusive end.
 
-To reuse public captions, pass the requested language to `fetch` with `--subtitle-lang` and use the returned sidecar path as `--subtitle`. The source options are local media or a single public HTTP(S) recording supported by yt-dlp. Some providers may require a local copy. Sampled images can miss brief actions, and reading small text may require a narrow focus pass. Image and text usage depends on the model's input accounting.
+`captions` can read a same-name or explicitly supplied subtitle and can transcribe with `--whisper-model FILE`. An individual Whisper window is limited to 120 seconds. `evidence` and `captions --batch` split longer requests locally into windows of at most 120 seconds. `fetch` downloads separately when only a reusable local source is needed. Some providers require a local copy. Sampled images can miss brief actions, and image and text token usage depends on the host model.
+
+## Optional MCP server
+
+Start a build from this source with `watch-video mcp` as a local stdio server. A host that forwards images from MCP tool results can receive the JPEG and timestamped text in the same response. `video_evidence` returns one storyboard for a local file or a public recording. `video_frame` returns one detailed frame for a known time. For long transcripts, the tool sends timestamped excerpts across the window and indicates when to request a narrower interval. Reuse the returned local video path within the same server session. The server keeps its temporary downloads until it exits.
+
+In Codex, add the following to your configuration and replace the command with the absolute path to the binary.
+
+```toml
+[mcp_servers.watch_video]
+command = "/path/to/watch-video"
+args = ["mcp"]
+tool_timeout_sec = 300
+```
+
+In DeepSeek Harness, add this entry to the profile overlay and use a vision-enabled model with attachments enabled.
+
+```yaml
+- insert:
+    - id: watch-video-mcp
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: watch_video
+        transport: stdio
+        command: /path/to/watch-video
+        args: [mcp]
+        toolCallTimeoutMs: 300000
+```
+
+Allow enough tool time for local transcription. Add `--tools-dir` and its directory to the server arguments if the host's PATH does not include FFmpeg. The Skill uses the CLI when the server tools are unavailable. [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) · [DeepSeek Harness MCP configuration](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md)
 
 ## Build and contribute
 

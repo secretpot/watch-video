@@ -33,23 +33,12 @@ func runCaptionBatch(ctx context.Context, tools toolset, info mediaInfo, start, 
 		}
 		result = captions
 		if result.Source == "none" && model != "" && len(info.Audio) > 0 {
-			for from := start; from < end; {
-				to := min(from+whisperWindowSeconds, end)
-				cues, err := transcribeWindow(ctx, tools, info, from, to, dir, model, language)
-				if err != nil {
-					return nil, fmt.Errorf("transcribe %.3f–%.3f s: %w", from, to, err)
-				}
-				if cues != nil {
-					result.Source = "whisper"
-					result.Cues = append(result.Cues, cues...)
-				}
-				from = to
-			}
-			if result.Source == "whisper" && language != "auto" {
-				result.Language = language
+			result, err = transcribeBatch(ctx, tools, info, result, dir, model, language)
+			if err != nil {
+				return nil, err
 			}
 		}
-		if err := os.WriteFile(filepath.Join(dir, batchTranscript), []byte(compactTranscript(result.Cues)), 0600); err != nil {
+		if err := writeTranscript(dir, result.Cues); err != nil {
 			return nil, err
 		}
 		return result, nil
@@ -61,6 +50,29 @@ func runCaptionBatch(ctx context.Context, tools toolset, info mediaInfo, start, 
 		Source: result.Source, Start: result.Start, End: result.End, Cues: len(result.Cues),
 		Manifest: "captions.json", Transcript: batchTranscript,
 	})
+}
+
+func transcribeBatch(ctx context.Context, tools toolset, info mediaInfo, result captionsResult, dir, model, language string) (captionsResult, error) {
+	for from := result.Start; from < result.End; {
+		to := min(from+whisperWindowSeconds, result.End)
+		cues, err := transcribeWindow(ctx, tools, info, from, to, dir, model, language)
+		if err != nil {
+			return captionsResult{}, fmt.Errorf("transcribe %.3f–%.3f s: %w", from, to, err)
+		}
+		result.Cues = append(result.Cues, cues...)
+		from = to
+	}
+	if len(result.Cues) > 0 {
+		result.Source = "whisper"
+		if language != "auto" {
+			result.Language = language
+		}
+	}
+	return result, nil
+}
+
+func writeTranscript(dir string, cues []captionCue) error {
+	return os.WriteFile(filepath.Join(dir, batchTranscript), []byte(compactTranscript(cues)), 0600)
 }
 
 func compactTranscript(cues []captionCue) string {

@@ -24,10 +24,13 @@ const usage = `Usage: watch-video <command> [options] [input]
   doctor                                 Check media dependencies
   probe INPUT                            Inspect a local video
   fetch URL --out NEWDIR                 Download one public recorded video
+  evidence INPUT --out NEWDIR            Prepare one storyboard and timestamped captions
   overview INPUT --out NEWDIR            Create a timestamped contact sheet
+  focus INPUT --at TIME --out NEWDIR    Extract one frame at a specific moment
   focus INPUT --start SEC --end SEC --out NEWDIR
                                          Extract up to six high-resolution frames
   captions INPUT --out NEWDIR            Read or locally transcribe dialogue
+  mcp                                    Serve video tools over stdio
 
 Use watch-video <command> --help for command options.`
 
@@ -216,31 +219,39 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	toolsDir := flags.String("tools-dir", "", "directory containing media tools, searched before PATH")
-	var out, startArg, endArg, subtitle, model, language string
+	var out, startArg, endArg, atArg, subtitle, model, language, subtitleLanguage string
 	var frames int
-	var batch bool
+	var batch, noASR bool
 	switch command {
 	case "doctor", "probe":
-	case "fetch", "overview", "focus", "captions":
+	case "fetch", "evidence", "overview", "focus", "captions":
 		flags.StringVar(&out, "out", "", "new output directory with an existing parent")
 	default:
 		return fmt.Errorf("unknown command %q\n%s", command, usage)
 	}
 	switch command {
-	case "overview", "focus", "captions":
-		flags.StringVar(&startArg, "start", "", "start time in seconds")
-		flags.StringVar(&endArg, "end", "", "exclusive end time in seconds")
+	case "evidence", "overview", "focus", "captions":
+		flags.StringVar(&startArg, "start", "", "start time in seconds, MM:SS or HH:MM:SS")
+		flags.StringVar(&endArg, "end", "", "exclusive end time in seconds, MM:SS or HH:MM:SS")
 	}
 	switch command {
 	case "focus":
+		flags.StringVar(&atArg, "at", "", "extract one frame at or after this time (use --end for a cutoff)")
 		flags.IntVar(&frames, "frames", 6, "number of frames (1–6)")
-	case "fetch":
-		flags.StringVar(&language, "subtitle-lang", "", "one exact platform subtitle language tag")
-	case "captions":
+	case "fetch", "evidence":
+		flags.StringVar(&subtitleLanguage, "subtitle-lang", "", "one exact platform subtitle language tag")
+	}
+	switch command {
+	case "captions", "evidence":
 		flags.StringVar(&subtitle, "subtitle", "", "SRT or VTT file on the source timeline")
 		flags.StringVar(&model, "whisper-model", "", "local whisper.cpp model (enables fallback transcription)")
 		flags.StringVar(&language, "language", "", "preferred language or Whisper language code")
+	}
+	if command == "captions" {
 		flags.BoolVar(&batch, "batch", false, "process longer intervals locally and write compact timestamped text")
+	}
+	if command == "evidence" {
+		flags.BoolVar(&noASR, "no-asr", false, "use existing subtitles without running speech recognition")
 	}
 	positionals, err := parseInput(flags, args[1:])
 	if errors.Is(err, flag.ErrHelp) {
@@ -289,7 +300,19 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	}
 	if command == "fetch" {
 		return withOutput(out, command, stdout, func(dir string) (any, error) {
-			return fetchVideo(ctx, tools, input, language, dir)
+			return fetchVideo(ctx, tools, input, subtitleLanguage, dir)
+		})
+	}
+	if command == "evidence" {
+		if noASR && model != "" {
+			return errors.New("--no-asr cannot be combined with --whisper-model")
+		}
+		options := evidenceOptions{
+			start: startArg, end: endArg, subtitle: subtitle, model: model,
+			language: language, subtitleLanguage: subtitleLanguage, noASR: noASR,
+		}
+		return withOutput(out, command, stdout, func(dir string) (any, error) {
+			return prepareEvidence(ctx, tools, input, dir, options)
 		})
 	}
 	input, err = regularFile(input)
@@ -306,8 +329,15 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	if command == "probe" {
 		return writeJSON(stdout, info)
 	}
-	if command == "focus" && (startArg == "" || endArg == "" || frames < 1 || frames > 6) {
-		return errors.New("focus requires --start, --end and 1–6 frames")
+	if command == "focus" {
+		if atArg != "" {
+			if startArg != "" {
+				return errors.New("--at cannot be combined with --start")
+			}
+			startArg = atArg
+		} else if startArg == "" || endArg == "" || frames < 1 || frames > 6 {
+			return errors.New("focus requires --at or --start, --end and 1–6 frames")
+		}
 	}
 	start, end, err := parseWindow(startArg, endArg, info.Duration)
 	if err != nil {
@@ -317,12 +347,8 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		return err
 	}
 	if command == "captions" {
-		if subtitle == "" {
-			subtitle, err = adjacentSubtitle(input)
-			if err != nil {
-				return err
-			}
-		} else if subtitle, err = regularFile(subtitle); err != nil {
+		subtitle, err = resolveSubtitle(input, subtitle)
+		if err != nil {
 			return err
 		}
 		if model != "" {
@@ -339,6 +365,9 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		})
 	}
 	return withOutput(out, command, stdout, func(dir string) (any, error) {
+		if atArg != "" {
+			return renderFocusAt(ctx, tools, info, start, end, dir)
+		}
 		return renderVideo(ctx, tools, info, start, end, dir, command == "focus", frames)
 	})
 }
@@ -348,9 +377,9 @@ func parseWindow(startArg, endArg string, duration float64) (float64, float64, e
 		if value == "" {
 			return fallback, nil
 		}
-		seconds, err := strconv.ParseFloat(value, 64)
+		seconds, err := parseTime(value)
 		if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) {
-			return 0, fmt.Errorf("%s requires a finite time in seconds", option)
+			return 0, fmt.Errorf("%s requires a time in seconds, MM:SS or HH:MM:SS", option)
 		}
 		return seconds, nil
 	}
@@ -368,7 +397,31 @@ func parseWindow(startArg, endArg string, duration float64) (float64, float64, e
 	return start, end, nil
 }
 
-func adjacentSubtitle(input string) (string, error) {
+var clockTime = regexp.MustCompile(`^(?:[0-9]+:[0-5][0-9]|[0-9]+):[0-5][0-9](?:\.[0-9]+)?$`)
+
+func parseTime(value string) (float64, error) {
+	if !strings.Contains(value, ":") {
+		return strconv.ParseFloat(value, 64)
+	}
+	if !clockTime.MatchString(value) {
+		return 0, errors.New("invalid clock time")
+	}
+	parts := strings.Split(value, ":")
+	var seconds float64
+	for index, part := range parts {
+		number, err := strconv.ParseFloat(part, 64)
+		if err != nil || (index > 0 && number >= 60) {
+			return 0, errors.New("invalid clock time")
+		}
+		seconds = 60*seconds + number
+	}
+	return seconds, nil
+}
+
+func resolveSubtitle(input, subtitle string) (string, error) {
+	if subtitle != "" {
+		return regularFile(subtitle)
+	}
 	stem := strings.TrimSuffix(input, filepath.Ext(input))
 	for _, extension := range []string{".srt", ".vtt"} {
 		if filepath.Ext(input) == extension {
@@ -402,22 +455,32 @@ func withOutput(path, command string, stdout io.Writer, work func(string) (any, 
 	if err != nil {
 		return err
 	}
-	manifest, err := os.Create(filepath.Join(out, command+".json"))
-	if err != nil {
-		return err
-	}
-	writeErr := writeJSON(manifest, result)
-	if err := errors.Join(writeErr, manifest.Close()); err != nil {
+	if err := writeJSONFile(filepath.Join(out, command+".json"), result); err != nil {
 		return err
 	}
 	complete = true
 	return writeJSON(stdout, result)
 }
 
+func writeJSONFile(path string, result any) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	return errors.Join(writeJSON(file, result), file.Close())
+}
+
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
-	if err := run(ctx, os.Args[1:], os.Stdout); err != nil {
+	args := os.Args[1:]
+	var err error
+	if len(args) > 0 && args[0] == "mcp" {
+		err = runVideoMCP(ctx, args[1:], os.Stdin, os.Stdout)
+	} else {
+		err = run(ctx, args, os.Stdout)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "watch-video:", err)
 		os.Exit(1)
 	}

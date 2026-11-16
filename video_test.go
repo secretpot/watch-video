@@ -42,11 +42,10 @@ func TestFocusUsesSourceTimestampsForOffsetVFR(t *testing.T) {
 		t.Fatalf("unexpected probe: %+v", info)
 	}
 	out := t.TempDir()
-	value, err := renderVideo(ctx, tools, info, 0.08, 0.6, out, true, 6)
+	result, err := renderVideo(ctx, tools, info, 0.08, 0.6, out, true, 6)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := value.(renderedVideo)
 	if len(result.Frames) != 2 || math.Abs(result.Frames[0].Time-0.1) > 1e-6 || math.Abs(result.Frames[1].Time-0.3) > 1e-6 {
 		t.Fatalf("got %+v, want source frames at .1 and .3 with end .6 excluded", result.Frames)
 	}
@@ -62,11 +61,11 @@ func TestFocusUsesSourceTimestampsForOffsetVFR(t *testing.T) {
 	if err != nil || config.Width != 96 || config.Height != 160 {
 		t.Fatalf("portrait JPEG was not preserved: %+v %v", config, err)
 	}
-	value, err = renderVideo(ctx, tools, info, 0.59, 0.61, t.TempDir(), true, 1)
+	result, err = renderVideo(ctx, tools, info, 0.59, 0.61, t.TempDir(), true, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	frames := value.(renderedVideo).Frames
+	frames := result.Frames
 	if len(frames) != 1 || math.Abs(frames[0].Time-0.6) > 1e-6 {
 		t.Fatalf("a frame just inside a fractional cutoff was lost: %+v", frames)
 	}
@@ -93,11 +92,10 @@ func TestOverviewAcceptsSingleFrame(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := renderVideo(ctx, tools, info, 0, info.Duration, t.TempDir(), false, 0)
+	result, err := renderVideo(ctx, tools, info, 0, info.Duration, t.TempDir(), false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := value.(renderedVideo)
 	if len(result.Frames) != 1 || result.Frames[0].Time != 0 || result.Frames[0].Row != 1 || result.Frames[0].Column != 1 {
 		t.Fatalf("unexpected single frame index: %+v", result.Frames)
 	}
@@ -115,11 +113,10 @@ func TestOverviewPrefersCutWithinBin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := renderVideo(ctx, tools, info, 0, info.Duration, t.TempDir(), false, 0)
+	result, err := renderVideo(ctx, tools, info, 0, info.Duration, t.TempDir(), false, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := value.(renderedVideo)
 	if len(result.Frames) != 9 || math.Abs(result.Frames[3].Time-3.1) > 1e-6 {
 		t.Fatalf("expected 9 frames with a cut at 3.1 seconds in bin four: %+v", result.Frames)
 	}
