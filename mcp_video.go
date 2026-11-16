@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 const videoEvidenceTool = "video_evidence"
 const videoFrameTool = "video_frame"
+const videoCaptionsTool = "video_captions"
 const transcriptBudget = 12000
 
 var videoMCPTools = []mcpTool{
@@ -42,6 +44,18 @@ var videoMCPTools = []mcpTool{
 				"input":{"type":"string","description":"Local video path returned by video_evidence"},
 				"at":{"type":"string","description":"Source time as written, for example 00:16"},
 				"end":{"type":"string","description":"Optional exclusive playback cutoff"}
+			}
+		}`),
+	},
+	{
+		Name:        videoCaptionsTool,
+		Description: "Read dialogue and exact cue times for an interval from earlier video_evidence, without reanalyzing video.",
+		InputSchema: json.RawMessage(`{
+			"type":"object","required":["evidence","start","end"],"additionalProperties":false,
+			"properties":{
+				"evidence":{"type":"string","description":"Caption reference returned by video_evidence"},
+				"start":{"type":"string","description":"Source start time in seconds, MM:SS or HH:MM:SS"},
+				"end":{"type":"string","description":"Exclusive source end time"}
 			}
 		}`),
 	},
@@ -73,6 +87,7 @@ func runVideoMCP(ctx context.Context, args []string, stdin io.Reader, stdout io.
 func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data json.RawMessage) ([]mcpContent, error) {
 	var input struct {
 		Input        string `json:"input"`
+		Evidence     string `json:"evidence"`
 		At           string `json:"at"`
 		Start        string `json:"start"`
 		End          string `json:"end"`
@@ -82,6 +97,9 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 	}
 	if err := json.Unmarshal(data, &input); err != nil {
 		return nil, fmt.Errorf("read tool arguments: %w", err)
+	}
+	if name == videoCaptionsTool {
+		return videoCaptionCues(scratch, input.Evidence, input.Start, input.End)
 	}
 	if input.Input == "" {
 		return nil, errors.New("input is required")
@@ -146,7 +164,7 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 				return nil, err
 			}
 			transcript, sampled := boundedTranscript(string(data))
-			fmt.Fprintf(&body, "\nCaptions (%s):\n%s", result.Captions.Source, transcript)
+			fmt.Fprintf(&body, "\nCaption reference: %s\nCaptions (%s):\n%s", filepath.Base(request), result.Captions.Source, transcript)
 			if sampled {
 				body.WriteString("\nCaption excerpts sampled across this window. Request a narrower window for missing dialogue.")
 			}
@@ -165,6 +183,60 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 		{Type: "text", Text: body.String()},
 		{Type: "image", MimeType: "image/jpeg", Data: image},
 	}, nil
+}
+
+func videoCaptionCues(scratch, reference, startArg, endArg string) ([]mcpContent, error) {
+	suffix, ok := strings.CutPrefix(reference, "request-")
+	if !ok || suffix == "" || strings.ContainsFunc(suffix, func(r rune) bool { return r < '0' || r > '9' }) {
+		return nil, errors.New("evidence must be a caption reference from video_evidence")
+	}
+	if startArg == "" || endArg == "" {
+		return nil, errors.New("start and end are required")
+	}
+	root, err := os.OpenRoot(scratch)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	data, err := root.ReadFile(filepath.Join(reference, "output", "captions.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, errors.New("caption reference has expired or has no captions in this MCP session")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read caption index: %w", err)
+	}
+	var index captionsResult
+	if err := json.Unmarshal(data, &index); err != nil {
+		return nil, fmt.Errorf("decode caption index: %w", err)
+	}
+	start, end, err := parseWindow(startArg, endArg, index.End)
+	if err != nil {
+		return nil, err
+	}
+	if start < index.Start {
+		return nil, fmt.Errorf("caption evidence starts at %s", formatCueTime(index.Start))
+	}
+	var cues strings.Builder
+	for _, cue := range index.Cues {
+		if cue.Start >= start && cue.End <= end {
+			fmt.Fprintf(&cues, "%s --> %s %s\n", formatCueTime(cue.Start), formatCueTime(cue.End), strings.ReplaceAll(cue.Text, "\n", " "))
+		}
+	}
+	captions, sampled := boundedTranscript(cues.String())
+	if captions == "" {
+		captions = "No complete caption cues in this interval."
+	}
+	if sampled {
+		captions += "Caption excerpts sampled across this interval. Request a narrower window for complete dialogue."
+	}
+	text := fmt.Sprintf("Captions (%s), %s to %s:\n%s", index.Source, formatCueTime(start), formatCueTime(end), captions)
+	return []mcpContent{{Type: "text", Text: text}}, nil
+}
+
+func formatCueTime(seconds float64) string {
+	micros := int64(math.Round(seconds * 1_000_000))
+	whole := micros / 1_000_000
+	return fmt.Sprintf("%02d:%02d:%02d.%06d", whole/3600, whole/60%60, whole%60, micros%1_000_000)
 }
 
 func boundedTranscript(text string) (string, bool) {

@@ -86,7 +86,7 @@ watch-video fetch "https://interactive-examples.mdn.mozilla.net/media/cc0-videos
 
 ## Optional MCP server
 
-Start a build from this source with `watch-video mcp` as a local stdio server. A host that forwards images from MCP tool results can receive the JPEG and timestamped text in the same response. `video_evidence` returns one storyboard for a local file or a public recording. `video_frame` returns one detailed frame for a known time. For long transcripts, the tool sends timestamped excerpts across the window and indicates when to request a narrower interval. Reuse the returned local video path within the same server session. The server keeps its temporary downloads until it exits.
+Start a build from this source with `watch-video mcp` as a local stdio server. A host that forwards images from MCP tool results can receive the JPEG and timestamped text in the same response. `video_evidence` returns one storyboard for a local file or a public recording. `video_frame` returns one detailed frame for a known time. When the overview has captions, `video_captions` uses its caption reference to return exact cue boundaries in a requested interval without decoding the video or transcribing it again. For long transcripts, the server sends timestamped excerpts and indicates when to request a narrower interval. The local video path and caption reference can be reused while that server keeps its temporary evidence.
 
 In Codex, add the following to your configuration and replace the command with the absolute path to the binary.
 

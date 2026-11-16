@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"image/jpeg"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,6 +28,91 @@ func TestMCPVideoFrameReturnsTimestampAndJPEG(t *testing.T) {
 	}
 	if config, err := jpeg.DecodeConfig(bytes.NewReader(content[1].Data)); err != nil || config.Width != 64 {
 		t.Fatalf("unexpected tool JPEG: %+v, %v", config, err)
+	}
+}
+
+func TestMCPVideoCaptionsReadsCompleteCuesFromEarlierEvidence(t *testing.T) {
+	videoTools(t)
+	input := writeVideoFixture(t, "clip.mp4", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=2:d=12")
+	subtitles := `1
+00:00:03,500 --> 00:00:04,100
+Crosses start
+
+2
+00:00:04,120 --> 00:00:04,500
+2022 H100
+
+3
+00:00:05,000 --> 00:00:06,000
+2023 H200
+
+4
+00:00:06,010 --> 00:00:07,000
+2024 B200
+
+5
+00:00:07,100 --> 00:00:08,000
+2025 B300
+
+6
+00:00:07,950 --> 00:00:08,500
+Crosses end
+`
+	if err := os.WriteFile(filepath.Join(filepath.Dir(input), "clip.srt"), []byte(subtitles), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scratch := t.TempDir()
+	args, err := json.Marshal(map[string]string{"input": input, "start": "00:02", "end": "00:10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	overview, err := runVideoMCPTool(t.Context(), scratch, "", videoEvidenceTool, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, referenceLine, found := strings.Cut(overview[0].Text, "\nCaption reference: ")
+	reference, _, _ := strings.Cut(referenceLine, "\n")
+	if !found || !strings.HasPrefix(reference, "request-") {
+		t.Fatalf("overview did not return a caption reference: %q", overview[0].Text)
+	}
+	call := func(scratch, reference, start, end string) ([]mcpContent, error) {
+		t.Helper()
+		args, err := json.Marshal(map[string]string{"evidence": reference, "start": start, "end": end})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return runVideoMCPTool(t.Context(), scratch, filepath.Join(scratch, "missing-tools"), videoCaptionsTool, args)
+	}
+	content, err := call(scratch, reference, "00:04", "00:08")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(content) != 1 || content[0].Type != "text" || len(content[0].Data) != 0 {
+		t.Fatalf("caption lookup should only return text: %+v", content)
+	}
+	const want = "Captions (sidecar), 00:00:04.000000 to 00:00:08.000000:\n" +
+		"00:00:04.120000 --> 00:00:04.500000 2022 H100\n" +
+		"00:00:05.000000 --> 00:00:06.000000 2023 H200\n" +
+		"00:00:06.010000 --> 00:00:07.000000 2024 B200\n" +
+		"00:00:07.100000 --> 00:00:08.000000 2025 B300\n"
+	if content[0].Text != want {
+		t.Fatalf("unexpected caption cues: %q", content[0].Text)
+	}
+	for _, invalid := range []struct {
+		name, scratch, reference, start, end, reason string
+	}{
+		{"not a reference", scratch, reference + "/../", "00:04", "00:08", "caption reference from video_evidence"},
+		{"expired", t.TempDir(), reference, "00:04", "00:08", "expired or has no captions"},
+		{"before evidence", scratch, reference, "00:01", "00:08", "caption evidence starts at"},
+		{"past cutoff", scratch, reference, "00:04", "00:10.001", "require 0 <= start < end <= 10"},
+		{"missing cutoff", scratch, reference, "00:04", "", "start and end are required"},
+	} {
+		t.Run(invalid.name, func(t *testing.T) {
+			_, err := call(invalid.scratch, invalid.reference, invalid.start, invalid.end)
+			if err == nil || !strings.Contains(err.Error(), invalid.reason) {
+				t.Fatalf("expected %q, got %v", invalid.reason, err)
+			}
+		})
 	}
 }
 
