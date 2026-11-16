@@ -186,10 +186,15 @@ func parseInput(flags *flag.FlagSet, args []string) ([]string, error) {
 			args = args[1:]
 			continue
 		}
-		// All command options take a value. FlagSet also handles --help.
+		// FlagSet also handles --help and boolean options without a value.
 		count := 1
 		if len(args) > 1 && !strings.Contains(arg, "=") {
 			count++
+			if option := flags.Lookup(strings.TrimLeft(arg, "-")); option != nil {
+				if boolean, ok := option.Value.(interface{ IsBoolFlag() bool }); ok && boolean.IsBoolFlag() {
+					count = 1
+				}
+			}
 		}
 		if err := flags.Parse(args[:count]); err != nil {
 			return nil, err
@@ -213,6 +218,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 	toolsDir := flags.String("tools-dir", "", "directory containing media tools, searched before PATH")
 	var out, startArg, endArg, subtitle, model, language string
 	var frames int
+	var batch bool
 	switch command {
 	case "doctor", "probe":
 	case "fetch", "overview", "focus", "captions":
@@ -234,6 +240,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		flags.StringVar(&subtitle, "subtitle", "", "SRT or VTT file on the source timeline")
 		flags.StringVar(&model, "whisper-model", "", "local whisper.cpp model (enables fallback transcription)")
 		flags.StringVar(&language, "language", "", "preferred language or Whisper language code")
+		flags.BoolVar(&batch, "batch", false, "process longer intervals locally and write compact timestamped text")
 	}
 	positionals, err := parseInput(flags, args[1:])
 	if errors.Is(err, flag.ErrHelp) {
@@ -323,6 +330,9 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 			if err != nil {
 				return err
 			}
+		}
+		if batch {
+			return runCaptionBatch(ctx, tools, info, start, end, out, subtitle, model, language, stdout)
 		}
 		return withOutput(out, command, stdout, func(dir string) (any, error) {
 			return collectCaptions(ctx, tools, info, start, end, dir, subtitle, model, language)

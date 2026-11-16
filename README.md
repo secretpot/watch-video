@@ -2,6 +2,17 @@
 
 Give a vision-capable model one contact sheet with timestamps, then inspect only the parts that matter. The Agent Skill works with a host that can execute a local command and open JPEGs. You can also run the CLI yourself and attach the resulting images and timestamped text to any model that accepts those inputs.
 
+## Use in an agent
+
+```text
+@watch-video <video_url>
+@watch-video <video_url> 这个视频说了什么
+```
+
+With just the link, the agent gives a timestamped overview. It starts with a compact storyboard and uses the video's content and your question to decide when to inspect a scene, read subtitles, or transcribe speech. Follow-up questions can go straight to the relevant interval using the video and timestamps already in the conversation.
+
+When the host passes `@watch-video` as text, the installed Skill can be selected from its name and description. For native explicit selection, use `$watch-video` in Codex or select `watch-video` from DeepSeek Harness's `/` menu, followed by the same URL and optional question. [Codex skill selection](https://developers.openai.com/blog/eval-skills#3-manually-trigger-the-skill-to-expose-hidden-assumptions) · [DeepSeek Harness skill selection](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-skill/README.md#use-this-package)
+
 ## Install
 
 Download the package and its matching `.sha256` file from [GitHub Releases](https://github.com/secretpot/watch-video/releases/latest). The Go executable is included. Install FFmpeg and ffprobe **8.0 or later** for your platform.
@@ -38,23 +49,36 @@ For a skill-enabled agent, place the extracted `watch-video` folder in its skill
 ### Optional tools
 
 - **Public recordings.** Put the official `yt-dlp_macos` or Windows `yt-dlp.exe` on `PATH` under the command name `yt-dlp`. Some sites need an additional JavaScript runtime. Support depends on the upstream extractor and the site's ability to deliver an anonymous recording. [yt-dlp release files](https://github.com/yt-dlp/yt-dlp#release-files) · [YouTube setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
-- **Local speech recognition.** On macOS, run `brew install whisper.cpp`. On Windows, extract `whisper-bin-x64.zip` from the linked upstream build, keep the included DLLs next to `whisper-cli.exe`, and add the executable directory to `PATH`. Download a Whisper model separately, such as the multilingual `ggml-base.bin`, and pass its local path to `--whisper-model`. [whisper.cpp setup](https://github.com/ggml-org/whisper.cpp#quick-start) · [Windows x64 binaries](https://github.com/ggml-org/whisper.cpp/releases/expanded_assets/b5454) · [GGML models](https://huggingface.co/ggerganov/whisper.cpp)
 
-Whisper runs on the CPU and estimates when each phrase was spoken. If Windows Whisper rejects a model path containing non-ASCII characters, retry with an ASCII-only model path. [Whisper Windows path issue](https://github.com/ggml-org/whisper.cpp/issues/4018)
+### Local speech recognition
 
-## Use
+On macOS, run `brew install whisper.cpp`. On Windows, extract `whisper-bin-x64.zip` from the linked upstream build, keep its DLLs next to `whisper-cli.exe`, and add the executable directory to `PATH`. [whisper.cpp setup](https://github.com/ggml-org/whisper.cpp#quick-start) · [Windows x64 binaries](https://github.com/ggml-org/whisper.cpp/releases/expanded_assets/b5454)
 
-Use the executable path in place of `watch-video` below, or add its `bin` folder to `PATH`. Use a fresh directory for each `--out`.
+Download the multilingual [ggml-base-q5_1.bin model](https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base-q5_1.bin) once and place it at the default path for your system:
+
+| Platform | Default model path |
+| --- | --- |
+| macOS | `~/Library/Application Support/watch-video/ggml-base-q5_1.bin` |
+| Windows | `%LOCALAPPDATA%\watch-video\ggml-base-q5_1.bin` |
+
+The Skill uses this path when speech is needed and usable subtitles are unavailable. CLI users can supply a different compatible model with `--whisper-model`. Whisper runs on the CPU and estimates when each phrase was spoken. If Windows Whisper rejects a model path containing non-ASCII characters, use an ASCII-only model path with the CLI option. [Whisper Windows path issue](https://github.com/ggml-org/whisper.cpp/issues/4018)
+
+## CLI reference
+
+Use the executable path in place of `watch-video` below, or add its `bin` folder to `PATH`. Pass an unused path to `--out` and let the CLI create the directory.
 
 ```text
 watch-video probe "clip.mp4"
 watch-video overview "clip.mp4" --out overview
 watch-video focus "clip.mp4" --start 1 --end 3 --frames 3 --out focus
 watch-video captions "clip.mp4" --start 1 --end 3 --subtitle "clip.srt" --out captions
+watch-video captions "clip.mp4" --batch --whisper-model "model.bin" --out transcript
 watch-video fetch "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" --out download
 ```
 
-`overview` produces at most nine tiles in one 960×540 JPEG. `focus` writes individual JPEGs with a long edge up to 1280 pixels. Their JSON files are the time index. Use `--start` and `--end` in seconds on the original video timeline, including for spoiler-free viewing. Quoted dialogue comes from complete cues inside the requested window. `captions` can find a same-name SRT or VTT beside the video, or read a sidecar specified with `--subtitle`. If there are no usable cues in that window, add `--whisper-model FILE` on a window of up to 120 seconds. Transcription runs on the same machine.
+`overview` produces at most nine tiles in one 960×540 JPEG. `focus` writes individual JPEGs with a long edge up to 1280 pixels. Their JSON files are the time index. Use `--start` and `--end` in seconds on the original video timeline, including for spoiler-free viewing. `captions` can find a same-name SRT or VTT beside the video, or read a sidecar specified with `--subtitle`. If there are no usable cues in that interval, add `--whisper-model FILE` for local transcription.
+
+An individual Whisper window is limited to 120 seconds. When the task needs speech across a longer interval, `--batch` splits it locally in one command. It prints only a file index and cue count. Read `captions.txt` for compact timestamped text and `captions.json` for individual cue boundaries. A supplied range still limits the evidence to the portion requested.
 
 To reuse public captions, pass the requested language to `fetch` with `--subtitle-lang` and use the returned sidecar path as `--subtitle`. The source options are local media or a single public HTTP(S) recording supported by yt-dlp. Some providers may require a local copy. Sampled images can miss brief actions, and reading small text may require a narrow focus pass. Image and text usage depends on the model's input accounting.
 

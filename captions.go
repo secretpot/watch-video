@@ -15,7 +15,10 @@ import (
 	"unicode/utf8"
 )
 
-const speechSampleRate = 16000
+const (
+	speechSampleRate     = 16000
+	whisperWindowSeconds = 120
+)
 
 type captionCue struct {
 	Start float64 `json:"start"`
@@ -36,21 +39,21 @@ var (
 	captionMarkup    = regexp.MustCompile(`(?i)</?(?:b|i|u|font|c|v|ruby|rt|lang)(?:[. 	][^<>]*)?>|<(?:[0-9]{2,}:)?[0-9]{2}:[0-9]{2}\.[0-9]{3}>`)
 )
 
-func collectCaptions(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out, subtitle, model, language string) (any, error) {
+func collectCaptions(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out, subtitle, model, language string) (captionsResult, error) {
 	result := captionsResult{Source: "none", Start: start, End: end, Cues: []captionCue{}}
 	if subtitle != "" {
 		switch strings.ToLower(filepath.Ext(subtitle)) {
 		case ".srt", ".vtt":
 		default:
-			return nil, fmt.Errorf("subtitle must be an SRT or WebVTT file: %s", subtitle)
+			return captionsResult{}, fmt.Errorf("subtitle must be an SRT or WebVTT file: %s", subtitle)
 		}
 		data, err := os.ReadFile(subtitle)
 		if err != nil {
-			return nil, err
+			return captionsResult{}, err
 		}
 		cues, err := captionsInWindow(data, start, end)
 		if err != nil {
-			return nil, fmt.Errorf("read subtitle %s: %w", subtitle, err)
+			return captionsResult{}, fmt.Errorf("read subtitle %s: %w", subtitle, err)
 		}
 		if len(cues) > 0 {
 			result.Source, result.Cues = "sidecar", cues
@@ -62,11 +65,11 @@ func collectCaptions(ctx context.Context, tools toolset, info mediaInfo, start, 
 			"-protocol_whitelist", "file,pipe", "-i", info.Input, "-map", "0:"+strconv.Itoa(track.Index),
 			"-avoid_negative_ts", "disabled", "-c:s", "srt", "-f", "srt", "pipe:1")
 		if err != nil {
-			return nil, fmt.Errorf("extract embedded subtitle stream %d: %w", track.Index, err)
+			return captionsResult{}, fmt.Errorf("extract embedded subtitle stream %d: %w", track.Index, err)
 		}
 		cues, err := captionsInWindow(data, start, end)
 		if err != nil {
-			return nil, fmt.Errorf("read embedded subtitle stream %d: %w", track.Index, err)
+			return captionsResult{}, fmt.Errorf("read embedded subtitle stream %d: %w", track.Index, err)
 		}
 		if len(cues) > 0 {
 			result.Source, result.Language, result.Cues = "embedded", track.Language, cues
@@ -76,12 +79,12 @@ func collectCaptions(ctx context.Context, tools toolset, info mediaInfo, start, 
 	if model == "" || len(info.Audio) == 0 {
 		return result, nil
 	}
-	if end > start+120 {
-		return nil, fmt.Errorf("Whisper requires a window of at most 120 seconds; select a smaller interval with --start and --end")
+	if end > start+whisperWindowSeconds {
+		return captionsResult{}, fmt.Errorf("Whisper requires a window of at most 120 seconds; select a smaller interval with --start and --end")
 	}
 	cues, err := transcribeWindow(ctx, tools, info, start, end, out, model, language)
 	if err != nil {
-		return nil, err
+		return captionsResult{}, err
 	}
 	if cues == nil {
 		return result, nil
@@ -168,7 +171,9 @@ func writeSpeechWAV(path string, pcm []byte) error {
 }
 
 func whisperCues(data []byte, start, end float64) ([]captionCue, error) {
-	cues, err := parseCaptions(data, start)
+	// Whisper sometimes assigns identical estimates to a cue's start and end.
+	// Parse those cues so the clipping pass can discard them without losing the window.
+	cues, err := parseCaptions(data, start, true)
 	if err != nil {
 		return nil, err
 	}
@@ -180,14 +185,14 @@ func whisperCues(data []byte, start, end float64) ([]captionCue, error) {
 }
 
 func captionsInWindow(data []byte, start, end float64) ([]captionCue, error) {
-	cues, err := parseCaptions(data, 0)
+	cues, err := parseCaptions(data, 0, false)
 	if err != nil {
 		return nil, err
 	}
 	return slices.DeleteFunc(cues, func(cue captionCue) bool { return cue.Start < start || cue.End > end }), nil
 }
 
-func parseCaptions(data []byte, offset float64) ([]captionCue, error) {
+func parseCaptions(data []byte, offset float64, allowZeroDuration bool) ([]captionCue, error) {
 	if !utf8.Valid(data) {
 		return nil, fmt.Errorf("subtitle content must be UTF-8")
 	}
@@ -221,7 +226,7 @@ func parseCaptions(data []byte, offset float64) ([]captionCue, error) {
 		}
 		cueStart, startOK := parseCaptionTimestamp(strings.TrimSpace(from), offset)
 		cueEnd, endOK := parseCaptionTimestamp(fields[0], offset)
-		if !startOK || !endOK || cueEnd <= cueStart {
+		if !startOK || !endOK || cueEnd < cueStart || (!allowZeroDuration && cueEnd == cueStart) {
 			return nil, fmt.Errorf("invalid subtitle timing at line %d", lineNumber)
 		}
 		payload := strings.TrimSpace(html.UnescapeString(captionMarkup.ReplaceAllString(strings.Join(block[1:], "\n"), "")))

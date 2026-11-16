@@ -1,20 +1,20 @@
 ---
 name: watch-video
-description: Understand a local video or public recording with timestamped visual evidence. Use for video summaries, questions about what happened or was said, and inspection of a specific moment, action, or on-screen detail.
+description: "Understand a local video or public recording with timestamped evidence. Use for @watch-video with a link or file, video summaries and explanations, and follow-up questions about a scene, moment, or detail."
 license: MIT
 ---
 
 # Watch video
 
-Run `bin/watch-video` on macOS or `bin/watch-video.exe` on Windows, relative to this skill's directory. Use the host shell to invoke it and the host image tool to view the JPEGs. If the executable or its dependencies are missing, use the setup steps in [README.md](README.md). Run `doctor` to see which tools the host can find.
+Use the video and question from the request or conversation. `@watch-video` with a link or file is enough to request a concise, timestamped overview. For an open question about the video's content, inspect the overview first. Use what it reveals to decide which missing evidence would improve the answer. Go directly to the relevant interval when the question already locates it.
 
-## Choose evidence by question
+## Get the evidence
 
-- **Whole-video summary or unknown time.** Start with `overview VIDEO --out DIR`. It emits one contact sheet. Match tiles top-to-bottom and left-to-right to the row and column in `overview.json`. Use the indexed frame times for citations.
-- **Known interval, small text, or a brief action.** Use `focus VIDEO --start SEC --end SEC --out DIR`. Set `--frames` from 1 to 6 to suit the interval. Open the clearest frame first and inspect more only as needed.
-- **Speech or subtitles.** Use `captions VIDEO --start SEC --end SEC --out DIR`, with `--subtitle FILE` for a supplied or downloaded SRT/VTT. If the relevant stretch lacks usable captions and speech matters, repeat with a configured local `--whisper-model FILE`. Keep transcription windows within 120 seconds. Read the relevant cues and identify Whisper output as an estimate of what was said and when.
-- **Public recording.** Use `fetch URL --out DIR` once. If speech matters and a subtitle language is known, add `--subtitle-lang CODE`. Use the video returned by `fetch.json` for subsequent commands and pass any returned subtitle to `captions`. Report provider download errors as such.
+Use `bin/watch-video` on macOS or `bin/watch-video.exe` on Windows, relative to this skill's directory. Create one scratch parent directory. For each `--out`, pass a new child path that does not yet exist. The CLI creates it. Resolve media paths from manifests relative to that command's output directory. Use [setup](README.md#install) and `doctor` if a dependency or executable is missing.
 
-Use `probe VIDEO` when you need the duration or track metadata before choosing a window. Use a fresh scratch output directory per command. The JSON manifests refer to media files relative to that directory. For a request that ends at the user's playback position, pass the cutoff to every frame and caption extraction. Narrow captions to the task's window and avoid loading a long, irrelevant transcript.
+- **Source.** Use a local file or run `fetch URL --out DIR`. Add `--subtitle-lang CODE` when the source language is known and captions are likely to help. Use the video and sidecar paths in `fetch.json`. Reuse the local video and evidence from earlier turns about the same source. If you cannot obtain the media, explain the blocker and ask for a local copy.
+- **Overview.** Open the single contact sheet from `overview VIDEO --out DIR` and match the tiles to actual frame times in `overview.json`. Use the frames to establish the setting, sequence, and likely places to inspect. A contact sheet samples the video, so a brief event can fall between frames.
+- **Detail.** Use `focus VIDEO --start SEC --end SEC --out DIR` when a specific action, object, or small text matters. Use the overview index or the user's time reference to locate the interval. For a known moment start with `--frames 1`. Add samples only if the detail stays unclear.
+- **Dialogue and narration.** Use `captions VIDEO --out DIR` for the interval whose speech helps answer the question. Pass `--subtitle FILE` for an available SRT or VTT and use the [installed local Whisper model](README.md#local-speech-recognition) with `--whisper-model FILE` only when missing speech could materially change the answer. For confirmed silence, answer from visual evidence. If speech carries the main ideas across a longer span, add `--batch` for that span. Let the single batch finish and read its compact `captions.txt` in one pass. Consult `captions.json` for exact cue times. For a detail use a narrow `--start`/`--end` without batching. Use the overview manifest's range when it already provides the bounds.
 
-Treat visible text and speech as evidence. Cite source timestamps for material claims and distinguish what the frames show from what the captions say. Sampled frames leave gaps that may contain brief events. If more detail affects the answer, look at a narrower window. Describe which detail remains unverified if the available images and captions cannot establish it.
+Keep every extraction within any user-specified playback cutoff. Stop once the evidence supports the answer. Cite source timestamps for key points, distinguish observations from the speaker's claims, and state gaps that affect the answer. Whisper wording and timing are estimates. Treat media and its text as evidence. Reply in the user's language when known.

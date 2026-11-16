@@ -37,6 +37,27 @@ func TestCaptionsShiftSpeechToVideoTimeline(t *testing.T) {
 	}
 }
 
+func TestCaptionsKeepWhisperWindowWithZeroDurationCue(t *testing.T) {
+	input := []byte("25\n00:00:42,000 --> 00:00:43,000\n都是可以的\n\n" +
+		"26\n00:00:43,000 --> 00:00:43,000\n对不对\n\n" +
+		"27\n00:00:43,000 --> 00:00:45,000\n另外一个你会看小孩吗\n")
+	got, err := whisperCues(input, 960, 1080)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []captionCue{
+		{Start: 1002, End: 1003, Text: "都是可以的"},
+		{Start: 1003, End: 1005, Text: "另外一个你会看小孩吗"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cues = %#v; want %#v", got, want)
+	}
+	_, err = captionsInWindow(input, 0, 120)
+	if err == nil || !strings.Contains(err.Error(), "invalid subtitle timing") {
+		t.Fatalf("external subtitle error = %v; want invalid timing", err)
+	}
+}
+
 func TestCaptionsPreferSidecarToEmbeddedAndSpeech(t *testing.T) {
 	dir := t.TempDir()
 	subtitle := filepath.Join(dir, "已有 字幕.srt")
@@ -46,11 +67,10 @@ func TestCaptionsPreferSidecarToEmbeddedAndSpeech(t *testing.T) {
 	// Neither external tool could read this input. A sidecar must still produce the requested evidence.
 	info := mediaInfo{Input: filepath.Join(dir, "missing.mkv"), Audio: []streamInfo{{Index: 1}},
 		Subtitles: []streamInfo{{Index: 2, Codec: "subrip"}}}
-	value, err := collectCaptions(context.Background(), toolset{}, info, 0, 3, dir, subtitle, "unused-model.bin", "en")
+	got, err := collectCaptions(context.Background(), toolset{}, info, 0, 3, dir, subtitle, "unused-model.bin", "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := value.(captionsResult)
 	if got.Source != "sidecar" || len(got.Cues) != 1 || got.Cues[0].Text != "Existing text" {
 		t.Fatalf("result = %#v", got)
 	}
@@ -73,11 +93,10 @@ func TestCaptionsEmbeddedOnNonzeroContainerTimeline(t *testing.T) {
 		t.Fatalf("create subtitle fixture: %v\n%s", err, data)
 	}
 	info := mediaInfo{Input: input, StartTime: 7, Subtitles: []streamInfo{{Index: 1, Codec: "subrip"}}}
-	value, err := collectCaptions(context.Background(), toolset{}, info, 1, 3, dir, "", "unused-model.bin", "en")
+	got, err := collectCaptions(context.Background(), toolset{}, info, 1, 3, dir, "", "unused-model.bin", "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := value.(captionsResult)
 	want := []captionCue{{Start: 1.25, End: 2.75, Text: "Inside"}}
 	if got.Source != "embedded" || !reflect.DeepEqual(got.Cues, want) {
 		t.Fatalf("result = %#v; want embedded cues %#v", got, want)
@@ -105,11 +124,10 @@ func TestCaptionsSkipWhisperAfterAudioTrackEnds(t *testing.T) {
 		t.Fatalf("create short audio fixture: %v\n%s", err, data)
 	}
 	info := mediaInfo{Input: input, Audio: []streamInfo{{Index: 1}}}
-	value, err := collectCaptions(context.Background(), toolset{}, info, 2, 3, dir, "", "unused-model.bin", "en")
+	got, err := collectCaptions(context.Background(), toolset{}, info, 2, 3, dir, "", "unused-model.bin", "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := value.(captionsResult)
 	if got.Source != "none" || len(got.Cues) != 0 {
 		t.Fatalf("result = %#v; want empty evidence", got)
 	}
