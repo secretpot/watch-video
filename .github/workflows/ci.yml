@@ -1,0 +1,135 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            label: macOS 15 arm64
+            exe: watch-video
+            artifact: watch-video-macos-arm64
+            archive: watch-video-macos-arm64.tar.gz
+          - runner: windows-2025
+            label: Windows Server 2025 x64
+            exe: watch-video.exe
+            artifact: watch-video-windows-amd64-preview
+            archive: watch-video-windows-amd64-preview.zip
+    env:
+      CGO_ENABLED: '0'
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install FFmpeg on macOS
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+
+      - name: Install FFmpeg on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $version = '9.0.2'
+          $asset = "ffmpeg-$version-essentials_build.7z"
+          $archive = Join-Path $env:RUNNER_TEMP $asset
+          $tools = Join-Path $env:RUNNER_TEMP 'watch-video-tools'
+          Invoke-WebRequest "https://github.com/GyanD/codexffmpeg/releases/download/$version/$asset" -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '4705843ccaaf54257c16ad90f3e952ece33c17df964ecf7bfdbb0f49c7171077') {
+              throw 'FFmpeg archive checksum did not match'
+          }
+          & 7z x $archive "-o$tools" -y
+          Join-Path $tools "ffmpeg-$version-essentials_build/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Build and unpack release archive
+        env:
+          EXE: ${{ matrix.exe }}
+          ARCHIVE: ${{ matrix.archive }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $stage = 'dist/stage/watch-video'
+          $unpacked = 'dist/unpacked'
+          $archive = "dist/$env:ARCHIVE"
+          New-Item -ItemType Directory "$stage/bin", $unpacked | Out-Null
+          go build -trimpath -o "$stage/bin/$env:EXE" .
+          Copy-Item -Path SKILL.md, README.md, LICENSE -Destination $stage
+          if ($IsWindows) {
+              Compress-Archive -LiteralPath $stage -DestinationPath $archive
+              Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
+          } else {
+              tar -czf $archive -C dist/stage watch-video
+              tar -xzf $archive -C $unpacked
+          }
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $env:ARCHIVE" | Set-Content "$archive.sha256" -Encoding ascii
+
+      - name: Exercise the packaged executable
+        env:
+          EXE: ${{ matrix.exe }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $bundle = Resolve-Path 'dist/unpacked/watch-video'
+          $binary = Join-Path $bundle "bin/$env:EXE"
+          Get-Item (Join-Path $bundle 'SKILL.md'), (Join-Path $bundle 'LICENSE') | Out-Null
+          $media = Join-Path $env:RUNNER_TEMP '测试 video'
+          New-Item -ItemType Directory $media | Out-Null
+          $clip = Join-Path $media '示例 clip.mp4'
+          ffmpeg -nostdin -v error -f lavfi -i 'color=red:s=180x320:r=10:d=3' -pix_fmt yuv420p -c:v libx264 $clip
+          $captions = Join-Path $media '台词.srt'
+          @'
+          1
+          00:00:01,000 --> 00:00:01,500
+          Before the cutoff
+
+          2
+          00:00:01,750 --> 00:00:02,300
+          After the cutoff
+          '@ | Set-Content -LiteralPath $captions -Encoding utf8
+
+          & $binary doctor
+          & $binary probe $clip
+          $overview = Join-Path $media 'overview'
+          $sheet = & $binary overview $clip --end 2 --out $overview | ConvertFrom-Json
+          if ($sheet.images.Count -ne 1 -or $sheet.images[0].width -ne 960 -or $sheet.images[0].height -ne 540) {
+              throw 'Unexpected storyboard dimensions'
+          }
+          Get-Item (Join-Path $overview $sheet.images[0].path) | Out-Null
+          $focus = Join-Path $media 'focus'
+          $frames = & $binary focus $clip --start 1 --end 2 --frames 2 --out $focus | ConvertFrom-Json
+          if ($frames.frames.Count -ne 2 -or @($frames.frames | Where-Object { $_.time -lt 1 -or $_.time -ge 2 }).Count -ne 0) {
+              throw 'Unexpected frame count or a frame outside the requested interval'
+          }
+          $result = & $binary captions $clip --start 1 --end 2 --subtitle $captions --out (Join-Path $media 'captions') | ConvertFrom-Json
+          if ($result.source -ne 'sidecar' -or $result.cues.Count -ne 1 -or $result.cues[0].text -ne 'Before the cutoff') {
+              throw 'Caption cutoff did not hold'
+          }
+
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        if: github.event_name == 'push'
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          path: |
+            dist/${{ matrix.archive }}
+            dist/${{ matrix.archive }}.sha256
