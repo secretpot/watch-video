@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -18,11 +19,12 @@ const videoEvidenceTool = "video_evidence"
 const videoFrameTool = "video_frame"
 const videoCaptionsTool = "video_captions"
 const transcriptBudget = 12000
+const chapterTitleBudget = 120
 
 var videoMCPTools = []mcpTool{
 	{
 		Name:        videoEvidenceTool,
-		Description: "Watch a video in one call. Returns one storyboard and timestamped captions. Reuse the returned local video path for follow-up.",
+		Description: "Watch a video in one call. Returns a timestamped storyboard, source chapter labels when available, and captions. Reuse the returned local video path for follow-up.",
 		InputSchema: json.RawMessage(`{
 			"type":"object","required":["input"],"additionalProperties":false,
 			"properties":{
@@ -158,6 +160,15 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 		for _, frame := range result.Frames {
 			fmt.Fprintf(&body, " row %d col %d = %.3f s;", frame.Row, frame.Column, frame.Time)
 		}
+		if len(result.Chapters) != 0 {
+			body.WriteString("\nSource chapter labels and time ranges (publisher metadata)")
+			for _, chapter := range result.Chapters {
+				fmt.Fprintf(&body, "\n- %s–%s", formatCueTime(chapter.Start), formatCueTime(chapter.End))
+				if label := chapterLabel(chapter.Title); label != "" {
+					fmt.Fprintf(&body, "  %s", label)
+				}
+			}
+		}
 		if result.Captions.Text != "" {
 			data, err := os.ReadFile(filepath.Join(out, result.Captions.Text))
 			if err != nil {
@@ -183,6 +194,20 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 		{Type: "text", Text: body.String()},
 		{Type: "image", MimeType: "image/jpeg", Data: image},
 	}, nil
+}
+
+func chapterLabel(title string) string {
+	title = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return ' '
+		}
+		return r
+	}, title)
+	label := []rune(strings.Join(strings.Fields(title), " "))
+	if len(label) > chapterTitleBudget {
+		return string(label[:chapterTitleBudget-1]) + "…"
+	}
+	return string(label)
 }
 
 func videoCaptionCues(scratch, reference, startArg, endArg string) ([]mcpContent, error) {

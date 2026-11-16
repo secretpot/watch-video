@@ -16,8 +16,9 @@ import (
 var languageTag = regexp.MustCompile(`^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$`)
 
 type fetchedVideo struct {
-	Video    string `json:"video"`
-	Subtitle string `json:"subtitle,omitempty"`
+	Video    string         `json:"video"`
+	Subtitle string         `json:"subtitle,omitempty"`
+	Chapters []videoChapter `json:"chapters,omitempty"`
 }
 
 func fetchVideo(ctx context.Context, tools toolset, input, language, out string) (fetchedVideo, error) {
@@ -49,9 +50,10 @@ func fetchVideo(ctx context.Context, tools toolset, input, language, out string)
 		return fetchedVideo{}, err
 	}
 	var item struct {
-		Type       string `json:"_type"`
-		IsLive     bool   `json:"is_live"`
-		LiveStatus string `json:"live_status"`
+		Type       string         `json:"_type"`
+		IsLive     bool           `json:"is_live"`
+		LiveStatus string         `json:"live_status"`
+		Chapters   []videoChapter `json:"chapters"`
 	}
 	if err := json.Unmarshal(metadata, &item); err != nil {
 		return fetchedVideo{}, fmt.Errorf("read yt-dlp metadata: %w", err)
@@ -113,7 +115,7 @@ func fetchVideo(ctx context.Context, tools toolset, input, language, out string)
 		}
 		path = reduced
 	}
-	result := fetchedVideo{Video: filepath.Base(path)}
+	result := fetchedVideo{Video: filepath.Base(path), Chapters: item.Chapters}
 	if language != "" {
 		downloadedSubtitle := subtitleStem + "." + language + ".srt"
 		if _, err := regularFile(downloadedSubtitle); !errors.Is(err, os.ErrNotExist) {

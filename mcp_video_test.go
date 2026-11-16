@@ -31,6 +31,62 @@ func TestMCPVideoFrameReturnsTimestampAndJPEG(t *testing.T) {
 	}
 }
 
+func TestMCPVideoEvidenceListsSourceChaptersBeforeCaptions(t *testing.T) {
+	videoTools(t)
+	metadata := filepath.Join(t.TempDir(), "chapters.txt")
+	const chapterData = `;FFMETADATA1
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=40000
+title=开头
+[CHAPTER]
+TIMEBASE=1/1000
+START=40000
+END=132000
+title=结尾
+`
+	if err := os.WriteFile(metadata, []byte(chapterData), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := writeVideoFixture(t, "chapters.mp4",
+		"-f", "lavfi", "-i", "color=c=blue:s=64x64:r=1:d=132",
+		"-f", "ffmetadata", "-i", metadata, "-map_chapters", "1")
+	subtitle := filepath.Join(filepath.Dir(input), "chapters.srt")
+	if err := os.WriteFile(subtitle, []byte("1\n00:00:01,000 --> 00:00:02,000\n开头台词\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args, err := json.Marshal(map[string]string{"input": input})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := runVideoMCPTool(t.Context(), t.TempDir(), "", videoEvidenceTool, args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(content) != 2 || content[0].Type != "text" || content[1].Type != "image" {
+		t.Fatalf("expected one text and one image, got %+v", content)
+	}
+	chapters, captions, hasCaptionRef := strings.Cut(content[0].Text, "\nCaption reference:")
+	const want = "Source chapter labels and time ranges (publisher metadata)\n" +
+		"- 00:00:00.000000–00:00:40.000000  开头\n" +
+		"- 00:00:40.000000–00:02:12.000000  结尾"
+	if !hasCaptionRef || !strings.HasSuffix(chapters, want) || !strings.Contains(captions, "开头台词") {
+		t.Fatalf("unexpected chapter and caption evidence: %q", content[0].Text)
+	}
+}
+
+func TestChapterLabelIsOneBoundedLine(t *testing.T) {
+	const title = "  南\n北\t段\x1b\u202e 落  "
+	if got := chapterLabel(title); got != "南 北 段 落" {
+		t.Fatalf("unexpected chapter label %q", got)
+	}
+	long := chapterLabel(strings.Repeat("章", 121))
+	if len([]rune(long)) != 120 || !strings.HasSuffix(long, "…") {
+		t.Fatalf("chapter label was not bounded: %q", long)
+	}
+}
+
 func TestMCPVideoCaptionsReadsCompleteCuesFromEarlierEvidence(t *testing.T) {
 	videoTools(t)
 	input := writeVideoFixture(t, "clip.mp4", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=2:d=12")

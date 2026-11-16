@@ -13,6 +13,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -24,13 +26,20 @@ const (
 )
 
 type mediaInfo struct {
-	Input         string       `json:"input"`
-	Duration      float64      `json:"duration"`
-	StartTime     float64      `json:"start_time"`
-	Video         streamInfo   `json:"video"`
-	Audio         []streamInfo `json:"audio"`
-	Subtitles     []streamInfo `json:"subtitles"`
+	Input         string         `json:"input"`
+	Duration      float64        `json:"duration"`
+	StartTime     float64        `json:"start_time"`
+	Video         streamInfo     `json:"video"`
+	Audio         []streamInfo   `json:"audio"`
+	Subtitles     []streamInfo   `json:"subtitles"`
+	Chapters      []videoChapter `json:"chapters,omitempty"`
 	videoTimeBase timeBase
+}
+
+type videoChapter struct {
+	Start float64 `json:"start_time"`
+	End   float64 `json:"end_time"`
+	Title string  `json:"title,omitempty"`
 }
 
 type streamInfo struct {
@@ -44,7 +53,7 @@ type streamInfo struct {
 }
 
 func probeVideo(ctx context.Context, tools toolset, input string) (mediaInfo, error) {
-	data, _, err := tools.run(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_streams", "-show_format", "-of", "json", "-i", input)
+	data, _, err := tools.run(ctx, "ffprobe", "-v", "error", "-protocol_whitelist", "file", "-show_streams", "-show_format", "-show_chapters", "-of", "json", "-i", input)
 	if err != nil {
 		return mediaInfo{}, err
 	}
@@ -54,6 +63,13 @@ func probeVideo(ctx context.Context, tools toolset, input string) (mediaInfo, er
 			Start    string `json:"start_time"`
 			Duration string `json:"duration"`
 		} `json:"format"`
+		Chapters []struct {
+			Start string `json:"start_time"`
+			End   string `json:"end_time"`
+			Tags  struct {
+				Title string `json:"title"`
+			} `json:"tags"`
+		} `json:"chapters"`
 		Streams []struct {
 			Index     int    `json:"index"`
 			Codec     string `json:"codec_name"`
@@ -137,6 +153,15 @@ func probeVideo(ctx context.Context, tools toolset, input string) (mediaInfo, er
 	if info.Duration <= 0 {
 		return mediaInfo{}, fmt.Errorf("input has no known positive duration")
 	}
+	for _, chapter := range probe.Chapters {
+		start, startOK := mediaNumber(chapter.Start)
+		end, endOK := mediaNumber(chapter.End)
+		if startOK && endOK && end > start {
+			info.Chapters = append(info.Chapters, videoChapter{
+				Start: start - info.StartTime, End: end - info.StartTime, Title: chapter.Tags.Title,
+			})
+		}
+	}
 	return info, nil
 }
 
@@ -149,10 +174,11 @@ func mediaNumber(value string) (float64, bool) {
 }
 
 type renderedVideo struct {
-	Start  float64      `json:"start"`
-	End    float64      `json:"end"`
-	Images []imageFile  `json:"images"`
-	Frames []frameIndex `json:"frames"`
+	Start    float64        `json:"start"`
+	End      float64        `json:"end"`
+	Images   []imageFile    `json:"images"`
+	Frames   []frameIndex   `json:"frames"`
+	Chapters []videoChapter `json:"chapters,omitempty"`
 }
 
 type imageFile struct {
@@ -204,18 +230,26 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 	frames := layout.focusFrames
 	focus := frames > 0
 	width, height := sheetWidth/sheetSide, sheetHeight/sheetSide
+	result := renderedVideo{Start: start, End: end}
 	var cuts []float64
+	var slots []videoChapter
 	if focus {
 		width, height = focusSize, focusSize
 	} else {
 		frames = sheetSide * sheetSide
-		var err error
-		cuts, err = sceneCuts(ctx, tools, info, start, end)
-		if err != nil {
-			return renderedVideo{}, err
+		if end-start > 120 {
+			result.Chapters = coveredChapters(info.Chapters, info.Duration, start, end, frames)
+		}
+		if len(result.Chapters) > 0 {
+			slots = chapterSlots(result.Chapters, frames)
+		} else {
+			var err error
+			cuts, err = sceneCuts(ctx, tools, info, start, end)
+			if err != nil {
+				return renderedVideo{}, err
+			}
 		}
 	}
-	result := renderedVideo{Start: start, End: end}
 	var tiles []image.Image
 	lastTime := math.Inf(-1)
 	for i := range frames {
@@ -223,6 +257,9 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 		binEnd := start + (end-start)*float64(i+1)/float64(frames)
 		if i == frames-1 {
 			binEnd = end
+		}
+		if len(slots) > 0 {
+			binStart, binEnd = slots[i].Start, slots[i].End
 		}
 		target := sampleTarget(cuts, binStart, binEnd)
 		frame, pts, err := extractFrame(ctx, tools, info, target, binEnd, width, height)
@@ -262,6 +299,56 @@ func renderVideo(ctx context.Context, tools toolset, info mediaInfo, start, end 
 		result.Images = []imageFile{{Path: "overview.jpg", Width: sheet.Bounds().Dx(), Height: sheet.Bounds().Dy()}}
 	}
 	return result, nil
+}
+
+func coveredChapters(authored []videoChapter, duration, start, end float64, limit int) []videoChapter {
+	var chapters []videoChapter
+	for _, chapter := range authored {
+		// Some sources round the final chapter beyond the actual media end.
+		chapter.Start, chapter.End = max(0, chapter.Start), min(duration, chapter.End)
+		from, to := max(start, chapter.Start), min(end, chapter.End)
+		if from >= to {
+			continue
+		}
+		if from > chapter.Start || to < chapter.End {
+			chapter.Title = ""
+		}
+		chapter.Start, chapter.End = from, to
+		chapters = append(chapters, chapter)
+	}
+	if len(chapters) < 2 || len(chapters) > limit {
+		return nil
+	}
+	sort.Slice(chapters, func(i, j int) bool { return chapters[i].Start < chapters[j].Start })
+	next := start
+	for _, chapter := range chapters {
+		if chapter.Start != next {
+			return nil
+		}
+		next = chapter.End
+	}
+	if next != end {
+		return nil
+	}
+	return chapters
+}
+
+func chapterSlots(chapters []videoChapter, count int) []videoChapter {
+	slots := slices.Clone(chapters)
+	for len(slots) < count {
+		widest := 0
+		for i, slot := range slots {
+			if slot.End-slot.Start > slots[widest].End-slots[widest].Start {
+				widest = i
+			}
+		}
+		slot := &slots[widest]
+		mid := slot.Start + (slot.End-slot.Start)/2
+		end := slot.End
+		slot.End = mid
+		slots = slices.Insert(slots, widest+1, videoChapter{Start: mid, End: end})
+	}
+	return slots
 }
 
 func drawStoryboard(tiles []image.Image, pack bool) *image.RGBA {

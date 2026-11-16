@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -154,5 +155,63 @@ func TestLongOverviewShowsBriefInsertBeforeFirstMidpoint(t *testing.T) {
 	red, green, blue, _ := sheet.At(160, 90).RGBA()
 	if red < 60000 || green < 60000 || blue < 60000 {
 		t.Fatal("first tile does not show the white insert between the two cuts")
+	}
+}
+
+func TestLongOverviewSamplesEmbeddedChaptersWithCutoff(t *testing.T) {
+	tools := videoTools(t)
+	metadata := filepath.Join(t.TempDir(), "chapters.txt")
+	if err := os.WriteFile(metadata, []byte(`;FFMETADATA1
+[CHAPTER]
+TIMEBASE=1/1000
+START=0
+END=10000
+title=Opening
+[CHAPTER]
+TIMEBASE=1/1000
+START=10000
+END=130000
+title=Middle
+[CHAPTER]
+TIMEBASE=1/1000
+START=130000
+END=160000
+title=Conclusion
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input := writeVideoFixture(t, "chapters.mp4",
+		"-f", "lavfi", "-i", "color=c=blue:s=64x64:r=2:d=160",
+		"-f", "ffmetadata", "-i", metadata, "-map", "0:v", "-map_chapters", "1")
+	info, err := probeVideo(t.Context(), tools, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := renderVideo(t.Context(), tools, info, 2, 153, t.TempDir(), videoLayout{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []videoChapter{{Start: 2, End: 10}, {Start: 10, End: 130, Title: "Middle"}, {Start: 130, End: 153}}
+	if !slices.Equal(result.Chapters, want) {
+		t.Fatalf("got chapters %+v, want clipped ranges without opening or conclusion titles %+v", result.Chapters, want)
+	}
+	if len(result.Frames) != 9 || len(result.Images) != 1 || result.Frames[0].Time != 6 {
+		t.Fatalf("expected nine frames including the short opening chapter at 6 s: %+v", result)
+	}
+	lastFrame := result.Frames[len(result.Frames)-1].Time
+	if lastFrame < 130 || lastFrame >= 153 {
+		t.Fatalf("last frame %.6f did not stay inside the final chapter before the cutoff", lastFrame)
+	}
+}
+
+func TestCoveredChaptersClampsRoundedEndAndRejectsGaps(t *testing.T) {
+	authored := []videoChapter{{Start: 0, End: 70}, {Start: 70, End: 161, Title: "Finale"}}
+	want := []videoChapter{{Start: 0, End: 70}, {Start: 70, End: 160.5, Title: "Finale"}}
+	if got := coveredChapters(authored, 160.5, 0, 160.5, 9); !slices.Equal(got, want) {
+		t.Fatalf("got chapters %+v, want %+v", got, want)
+	}
+	authored[1].Start = 71
+	if got := coveredChapters(authored, 160.5, 0, 160.5, 9); got != nil {
+		t.Fatalf("gapped chapters must fall back to scene sampling: %+v", got)
 	}
 }

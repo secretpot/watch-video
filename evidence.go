@@ -33,6 +33,7 @@ type evidenceCaptions struct {
 func prepareEvidence(ctx context.Context, tools toolset, input, out string, options evidenceOptions) (evidenceResult, error) {
 	var result evidenceResult
 	var err error
+	var publisherChapters []videoChapter
 	if options.model != "" {
 		options.model, err = regularFile(options.model)
 		if err != nil {
@@ -51,6 +52,7 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 			return result, err
 		}
 		input = filepath.Join(out, download.Video)
+		publisherChapters = download.Chapters
 	} else {
 		input, err = regularFile(input)
 		if err != nil {
@@ -65,6 +67,9 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 	info, err := probeVideo(ctx, tools, input)
 	if err != nil {
 		return result, err
+	}
+	if len(publisherChapters) > 0 {
+		info.Chapters = publisherChapters
 	}
 	start, end, err := parseWindow(options.start, options.end, info.Duration)
 	if err != nil {
