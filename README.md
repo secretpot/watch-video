@@ -40,6 +40,8 @@ For a skill-enabled agent, place the extracted `watch-video` folder in its skill
 - **Public recordings.** Put the official `yt-dlp_macos` or Windows `yt-dlp.exe` on `PATH` under the command name `yt-dlp`. Some sites need an additional JavaScript runtime. Support depends on the upstream extractor and the site's ability to deliver an anonymous recording. [yt-dlp release files](https://github.com/yt-dlp/yt-dlp#release-files) · [YouTube setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
 - **Local speech recognition.** On macOS, run `brew install whisper.cpp`. On Windows, extract `whisper-bin-x64.zip` from the linked upstream build, keep the included DLLs next to `whisper-cli.exe`, and add the executable directory to `PATH`. Download a Whisper model separately, such as the multilingual `ggml-base.bin`, and pass its local path to `--whisper-model`. [whisper.cpp setup](https://github.com/ggml-org/whisper.cpp#quick-start) · [Windows x64 binaries](https://github.com/ggml-org/whisper.cpp/releases/expanded_assets/b5454) · [GGML models](https://huggingface.co/ggerganov/whisper.cpp)
 
+Whisper runs on the CPU and estimates when each phrase was spoken. If Windows Whisper rejects a model path containing non-ASCII characters, retry with an ASCII-only model path. [Whisper Windows path issue](https://github.com/ggml-org/whisper.cpp/issues/4018)
+
 ## Use
 
 Use the executable path in place of `watch-video` below, or add its `bin` folder to `PATH`. Use a fresh directory for each `--out`.

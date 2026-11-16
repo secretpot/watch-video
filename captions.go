@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"html"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"strings"
 	"unicode/utf8"
 )
+
+const speechSampleRate = 16000
 
 type captionCue struct {
 	Start float64 `json:"start"`
@@ -45,7 +48,7 @@ func collectCaptions(ctx context.Context, tools toolset, info mediaInfo, start, 
 		if err != nil {
 			return nil, err
 		}
-		cues, err := captionsInWindow(data, start, end, 0)
+		cues, err := captionsInWindow(data, start, end)
 		if err != nil {
 			return nil, fmt.Errorf("read subtitle %s: %w", subtitle, err)
 		}
@@ -61,7 +64,7 @@ func collectCaptions(ctx context.Context, tools toolset, info mediaInfo, start, 
 		if err != nil {
 			return nil, fmt.Errorf("extract embedded subtitle stream %d: %w", track.Index, err)
 		}
-		cues, err := captionsInWindow(data, start, end, 0)
+		cues, err := captionsInWindow(data, start, end)
 		if err != nil {
 			return nil, fmt.Errorf("read embedded subtitle stream %d: %w", track.Index, err)
 		}
@@ -79,6 +82,9 @@ func collectCaptions(ctx context.Context, tools toolset, info mediaInfo, start, 
 	cues, err := transcribeWindow(ctx, tools, info, start, end, out, model, language)
 	if err != nil {
 		return nil, err
+	}
+	if cues == nil {
+		return result, nil
 	}
 	result.Source, result.Cues = "whisper", cues
 	if language != "auto" {
@@ -104,6 +110,20 @@ func captionTracks(streams []streamInfo, language string) []streamInfo {
 }
 
 func transcribeWindow(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out, model, language string) ([]captionCue, error) {
+	startSeconds := strconv.FormatFloat(start, 'f', 6, 64)
+	endSeconds := strconv.FormatFloat(end, 'f', 6, 64)
+	duration := strconv.FormatFloat(end-start, 'f', 6, 64)
+	// Preserve silence before a delayed audio stream. Whisper reads the samples starting at zero.
+	filter := fmt.Sprintf("atrim=start=%s:end=%s,asetpts=PTS-%s/TB,aresample=%d:async=1:first_pts=0", startSeconds, endSeconds, startSeconds, speechSampleRate)
+	pcm, _, err := tools.run(ctx, "ffmpeg", "-nostdin", "-v", "error", "-copyts", "-start_at_zero", "-ss", startSeconds,
+		"-protocol_whitelist", "file,pipe", "-i", info.Input, "-map", "0:"+strconv.Itoa(info.Audio[0].Index),
+		"-af", filter, "-t", duration, "-ac", "1", "-c:a", "pcm_s16le", "-f", "s16le", "pipe:1")
+	if err != nil {
+		return nil, fmt.Errorf("extract audio for Whisper: %w", err)
+	}
+	if len(pcm) == 0 {
+		return nil, nil
+	}
 	// Keep PCM and Whisper intermediates out of the result, including after a failed invocation.
 	tmp, err := os.MkdirTemp(out, ".asr-")
 	if err != nil {
@@ -112,16 +132,8 @@ func transcribeWindow(ctx context.Context, tools toolset, info mediaInfo, start,
 	defer os.RemoveAll(tmp)
 	wav := filepath.Join(tmp, "audio.wav")
 	prefix := filepath.Join(tmp, "transcript")
-	startSeconds := strconv.FormatFloat(start, 'f', 6, 64)
-	endSeconds := strconv.FormatFloat(end, 'f', 6, 64)
-	duration := strconv.FormatFloat(end-start, 'f', 6, 64)
-	// Preserve gaps between the requested start and a delayed audio stream. Whisper reads this WAV from zero.
-	filter := "atrim=start=" + startSeconds + ":end=" + endSeconds + ",asetpts=PTS-" + startSeconds + "/TB,aresample=16000:async=1:first_pts=0"
-	_, _, err = tools.run(ctx, "ffmpeg", "-nostdin", "-v", "error", "-copyts", "-start_at_zero", "-ss", startSeconds,
-		"-protocol_whitelist", "file,pipe", "-i", info.Input, "-map", "0:"+strconv.Itoa(info.Audio[0].Index),
-		"-af", filter, "-t", duration, "-ac", "1", "-c:a", "pcm_s16le", "-f", "wav", wav)
-	if err != nil {
-		return nil, fmt.Errorf("extract audio for Whisper: %w", err)
+	if err := writeSpeechWAV(wav, pcm); err != nil {
+		return nil, fmt.Errorf("write audio for Whisper: %w", err)
 	}
 	if language == "" {
 		language = "auto"
@@ -135,7 +147,24 @@ func transcribeWindow(ctx context.Context, tools toolset, info mediaInfo, start,
 	if err != nil {
 		return nil, fmt.Errorf("read Whisper transcript: %w", err)
 	}
-	return whisperCues(data, start, end)
+	audioEnd := start + float64(len(pcm))/(2*speechSampleRate)
+	return whisperCues(data, start, min(end, audioEnd))
+}
+
+func writeSpeechWAV(path string, pcm []byte) error {
+	// RIFF/WAVE header for the mono, signed 16-bit PCM emitted above.
+	header := binary.LittleEndian.AppendUint32([]byte("RIFF"), uint32(36+len(pcm)))
+	header = append(header, "WAVEfmt "...)
+	header = binary.LittleEndian.AppendUint32(header, 16) // PCM format header size
+	header = binary.LittleEndian.AppendUint16(header, 1)  // PCM encoding
+	header = binary.LittleEndian.AppendUint16(header, 1)  // Channels
+	header = binary.LittleEndian.AppendUint32(header, speechSampleRate)
+	header = binary.LittleEndian.AppendUint32(header, 2*speechSampleRate)
+	header = binary.LittleEndian.AppendUint16(header, 2) // Bytes per sample frame
+	header = binary.LittleEndian.AppendUint16(header, 16)
+	header = append(header, "data"...)
+	header = binary.LittleEndian.AppendUint32(header, uint32(len(pcm)))
+	return os.WriteFile(path, append(header, pcm...), 0600)
 }
 
 func whisperCues(data []byte, start, end float64) ([]captionCue, error) {
@@ -150,8 +179,8 @@ func whisperCues(data []byte, start, end float64) ([]captionCue, error) {
 	return slices.DeleteFunc(cues, func(cue captionCue) bool { return cue.Start >= cue.End }), nil
 }
 
-func captionsInWindow(data []byte, start, end, offset float64) ([]captionCue, error) {
-	cues, err := parseCaptions(data, offset)
+func captionsInWindow(data []byte, start, end float64) ([]captionCue, error) {
+	cues, err := parseCaptions(data, 0)
 	if err != nil {
 		return nil, err
 	}

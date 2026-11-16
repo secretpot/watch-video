@@ -15,7 +15,7 @@ func TestCaptionsFilterWebVTTByRequestedWindow(t *testing.T) {
 		"00:01.000 --> 00:02.100\r\nbefore the window\r\n\r\n" +
 		"spoken-line\r\n00:02.100 --> 00:04.000 align:start\r\n<v Mei>这句 &amp; <b>the second line</b>\r\n多行。\r\n\r\n" +
 		"00:03.900 --> 00:04.500\r\nfuture dialogue\r\n"
-	got, err := captionsInWindow([]byte(input), 2, 4, 0)
+	got, err := captionsInWindow([]byte(input), 2, 4)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,5 +89,28 @@ func TestCaptionsLongASRRequiresFocusedWindow(t *testing.T) {
 	_, err := collectCaptions(context.Background(), toolset{}, info, 21, 142, t.TempDir(), "", "model.bin", "")
 	if err == nil || !strings.Contains(err.Error(), "120 seconds") {
 		t.Fatalf("error = %v; want ASR duration error", err)
+	}
+}
+
+func TestCaptionsSkipWhisperAfterAudioTrackEnds(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("FFmpeg is unavailable")
+	}
+	dir := t.TempDir()
+	input := filepath.Join(dir, "short audio.mkv")
+	cmd := exec.Command(ffmpeg, "-v", "error", "-f", "lavfi", "-i", "color=blue:s=64x64:r=5:d=3",
+		"-f", "lavfi", "-i", "sine=duration=1", "-map", "0:v:0", "-map", "1:a:0", "-c:v", "ffv1", "-c:a", "pcm_s16le", input)
+	if data, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("create short audio fixture: %v\n%s", err, data)
+	}
+	info := mediaInfo{Input: input, Audio: []streamInfo{{Index: 1}}}
+	value, err := collectCaptions(context.Background(), toolset{}, info, 2, 3, dir, "", "unused-model.bin", "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := value.(captionsResult)
+	if got.Source != "none" || len(got.Cues) != 0 {
+		t.Fatalf("result = %#v; want empty evidence", got)
 	}
 }
