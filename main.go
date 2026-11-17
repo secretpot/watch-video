@@ -208,6 +208,10 @@ func parseInput(flags *flag.FlagSet, args []string) ([]string, error) {
 }
 
 func run(ctx context.Context, args []string, stdout io.Writer) error {
+	return runWithCache(ctx, args, stdout, nil)
+}
+
+func runWithCache(ctx context.Context, args []string, stdout io.Writer, cache *publicVideoCache) error {
 	if len(args) == 0 {
 		return errors.New(usage)
 	}
@@ -309,7 +313,7 @@ func run(ctx context.Context, args []string, stdout io.Writer) error {
 		}
 		options := evidenceOptions{
 			start: startArg, end: endArg, subtitle: subtitle, model: model,
-			language: language, subtitleLanguage: subtitleLanguage, noASR: noASR,
+			language: language, subtitleLanguage: subtitleLanguage, noASR: noASR, cache: cache,
 		}
 		return withOutput(out, command, stdout, func(dir string) (any, error) {
 			return prepareEvidence(ctx, tools, input, dir, options)

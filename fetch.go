@@ -16,9 +16,10 @@ import (
 var languageTag = regexp.MustCompile(`^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$`)
 
 type fetchedVideo struct {
-	Video    string         `json:"video"`
-	Subtitle string         `json:"subtitle,omitempty"`
-	Chapters []videoChapter `json:"chapters,omitempty"`
+	Video              string         `json:"video"`
+	Subtitle           string         `json:"subtitle,omitempty"`
+	Chapters           []videoChapter `json:"chapters,omitempty"`
+	subtitleIncomplete bool
 }
 
 type fetchOptions struct {
@@ -154,6 +155,7 @@ func fetchVideo(ctx context.Context, tools toolset, input, out string, options f
 			}
 			result.Subtitle = filepath.Base(subtitle)
 		}
+		result.subtitleIncomplete = result.Subtitle == ""
 	}
 	return result, nil
 }

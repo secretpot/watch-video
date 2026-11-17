@@ -18,7 +18,7 @@ func TestMCPVideoFrameReturnsTimestampAndJPEG(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := runVideoMCPTool(t.Context(), filepath.Dir(input), "", videoFrameTool, args)
+	content, err := runVideoMCPTool(t.Context(), filepath.Dir(input), "", videoFrameTool, args, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ title=结尾
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := runVideoMCPTool(t.Context(), t.TempDir(), "", videoEvidenceTool, args)
+	content, err := runVideoMCPTool(t.Context(), t.TempDir(), "", videoEvidenceTool, args, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ Crosses end
 	if err != nil {
 		t.Fatal(err)
 	}
-	overview, err := runVideoMCPTool(t.Context(), scratch, "", videoEvidenceTool, args)
+	overview, err := runVideoMCPTool(t.Context(), scratch, "", videoEvidenceTool, args, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +137,7 @@ Crosses end
 		if err != nil {
 			t.Fatal(err)
 		}
-		return runVideoMCPTool(t.Context(), scratch, filepath.Join(scratch, "missing-tools"), videoCaptionsTool, args)
+		return runVideoMCPTool(t.Context(), scratch, filepath.Join(scratch, "missing-tools"), videoCaptionsTool, args, nil)
 	}
 	content, err := call(scratch, reference, "00:04", "00:08")
 	if err != nil {
@@ -158,7 +158,7 @@ Crosses end
 	if err != nil {
 		t.Fatal(err)
 	}
-	quoteResult, err := runVideoMCPTool(t.Context(), scratch, "", videoCaptionsTool, quoteArgs)
+	quoteResult, err := runVideoMCPTool(t.Context(), scratch, "", videoCaptionsTool, quoteArgs, nil)
 	prefix := "Matched quote: H100 2023 H200\nQuote span: 00:00:04.120000 --> 00:00:06.000000\n"
 	if err != nil || len(quoteResult) != 1 || quoteResult[0].Type != "text" || quoteResult[0].Text != prefix+want {
 		t.Fatalf("unexpected quote result: %+v, %v", quoteResult, err)

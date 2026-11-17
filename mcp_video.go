@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -68,8 +69,9 @@ func runVideoMCP(ctx context.Context, args []string, stdin io.Reader, stdout io.
 	flags := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	toolsDir := flags.String("tools-dir", "", "directory containing media tools")
+	cacheDir := flags.String("cache-dir", "", "directory for the public video cache")
 	if err := flags.Parse(args); errors.Is(err, flag.ErrHelp) {
-		_, err = fmt.Fprintln(stdout, "Usage: watch-video mcp [--tools-dir DIR]")
+		_, err = fmt.Fprintln(stdout, "Usage: watch-video mcp [--tools-dir DIR] [--cache-dir DIR]")
 		return err
 	} else if err != nil {
 		return err
@@ -82,12 +84,39 @@ func runVideoMCP(ctx context.Context, args []string, stdin io.Reader, stdout io.
 		return err
 	}
 	defer os.RemoveAll(scratch)
+	cache, err := openPublicVideoCache(*cacheDir)
+	if err != nil {
+		cacheDiagnostic(err)
+	}
+	if cache != nil {
+		cacheDiagnostic(cache.prune(time.Now()))
+		done := make(chan struct{})
+		var stop context.CancelFunc
+		ctx, stop = context.WithCancel(ctx)
+		go func() {
+			defer close(done)
+			ticker := time.NewTicker(time.Hour)
+			defer ticker.Stop()
+			for {
+				select {
+				case now := <-ticker.C:
+					cacheDiagnostic(cache.prune(now))
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		defer func() {
+			stop()
+			<-done
+		}()
+	}
 	return serveMCP(ctx, stdin, stdout, videoMCPTools, func(ctx context.Context, name string, input json.RawMessage) ([]mcpContent, error) {
-		return runVideoMCPTool(ctx, scratch, *toolsDir, name, input)
+		return runVideoMCPTool(ctx, scratch, *toolsDir, name, input, cache)
 	})
 }
 
-func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data json.RawMessage) ([]mcpContent, error) {
+func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data json.RawMessage, cache *publicVideoCache) ([]mcpContent, error) {
 	var input struct {
 		Input        string `json:"input"`
 		Evidence     string `json:"evidence"`
@@ -142,7 +171,7 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 			args = append(args, "--no-asr")
 		}
 	}
-	if err := run(ctx, append(args, "--", input.Input), io.Discard); err != nil {
+	if err := runWithCache(ctx, append(args, "--", input.Input), io.Discard, cache); err != nil {
 		_ = os.RemoveAll(request)
 		return nil, err
 	}

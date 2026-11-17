@@ -53,4 +53,14 @@ Start the bundled CLI with `watch-video mcp` as a local stdio server. A host tha
 - `video_frame` returns one detailed frame for a known time.
 - `video_captions` uses the overview's caption reference to return exact cue boundaries for a requested interval without decoding or transcribing the video again. An optional `quote` aligns matching words to the start of their first caption and the end of their last caption.
 
-The local video path and caption reference can be reused while the server keeps its temporary evidence. See the [MCP configuration examples](../setup/INSTALL.md#configure-mcp) for Codex and DeepSeek Harness. The Skill uses the CLI when MCP is unavailable.
+Reuse the temporary video path and caption reference within the same MCP session. In a new chat or after the server restarts, call `video_evidence` with the original URL to get fresh references. The server can reuse the cached download.
+
+The Skill uses the CLI when MCP is unavailable. [MCP configuration for Codex and DeepSeek Harness](../setup/INSTALL.md#configure-mcp)
+
+### Public recording cache
+
+The MCP server keeps downloads of public HTTP(S) recordings that require no authentication, along with downloaded subtitles and chapter data, for seven days from the time the download is stored successfully. Cache lookup uses the exact URL, including its query string, and the subtitle download policy. Passing `subtitle_lang` or `no_asr` can select a different download.
+
+Whisper captions are reused for the same cached recording, normalized time window, language and model. A different time window can reuse the download and transcribe that window as needed.
+
+The server prunes expired cache entries on startup and hourly while running. The default directory is `~/Library/Caches/watch-video/public-v1` on macOS and `%LOCALAPPDATA%\watch-video\public-v1` on Windows. Use `watch-video mcp --cache-dir DIR` to select a different cache directory.

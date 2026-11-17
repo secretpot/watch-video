@@ -49,4 +49,14 @@ watch-video fetch "https://interactive-examples.mdn.mozilla.net/media/cc0-videos
 - `video_frame` 根据已知时间返回单张清晰帧和实际帧时间。
 - `video_captions` 用概览返回的字幕引用查询短区间内各条字幕的起止时间，直接读取已有结果。可用 `quote` 匹配原话，时间范围从第一条匹配字幕的起点到最后一条匹配字幕的终点。
 
-字幕过长时，工具会返回带时间码的摘录，并提示缩小查询区间。只要该服务还保留临时产物，就可以复用返回的本地视频路径和字幕引用。Skill 在 MCP 不可用时会使用 CLI。[Codex 和 DeepSeek Harness 的 MCP 配置](../setup/INSTALL.zh-CN.md#配置-mcp)
+字幕过长时，工具会返回带时间码的摘录，并提示缩小查询区间。在同一个 MCP 会话内可复用临时视频路径和字幕引用。开启新聊天或服务重启后，用原始 URL 调用 `video_evidence` 获取新的路径和引用，服务可复用缓存中的下载内容。
+
+Skill 在 MCP 不可用时会使用 CLI。[Codex 和 DeepSeek Harness 的 MCP 配置](../setup/INSTALL.zh-CN.md#配置-mcp)
+
+### 公开录播缓存
+
+MCP 服务缓存无需身份验证的公开 HTTP(S) 录播，以及一并下载的字幕和章节数据，从成功写入缓存起保留七天。查找缓存时使用完整 URL（含查询字符串）和字幕下载策略。传入 `subtitle_lang` 或 `no_asr` 可能会匹配到不同的下载缓存。
+
+缓存中的录播、归一化后的时间区间、语言和模型一致时，可复用 Whisper 字幕。查看其他区间时可复用已下载的录播，按需转写该区间。
+
+服务启动时和运行期间每小时清理过期缓存。macOS 默认目录为 `~/Library/Caches/watch-video/public-v1`，Windows 默认目录为 `%LOCALAPPDATA%\watch-video\public-v1`。用 `watch-video mcp --cache-dir DIR` 指定其他缓存目录。

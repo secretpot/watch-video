@@ -13,6 +13,7 @@ import (
 type evidenceOptions struct {
 	start, end, subtitle, model, language, subtitleLanguage string
 	noASR                                                   bool
+	cache                                                   *publicVideoCache
 }
 
 type evidenceResult struct {
@@ -34,6 +35,8 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 	var result evidenceResult
 	var err error
 	var publisherChapters []videoChapter
+	var sourceGeneration string
+	var info mediaInfo
 	if options.model != "" {
 		options.model, err = regularFile(options.model)
 		if err != nil {
@@ -47,10 +50,16 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 		}
 	}
 	if strings.HasPrefix(input, "https://") || strings.HasPrefix(input, "http://") {
-		download, err := fetchVideo(ctx, tools, input, out, fetchOptions{
+		fetchOptions := fetchOptions{
 			subtitleLanguage: options.subtitleLanguage,
 			autoSubtitle:     options.subtitle == "" && !options.noASR,
-		})
+		}
+		var download fetchedVideo
+		if options.cache != nil {
+			download, info, sourceGeneration, err = options.cache.fetch(ctx, tools, input, out, fetchOptions)
+		} else {
+			download, err = fetchVideo(ctx, tools, input, out, fetchOptions)
+		}
 		if err != nil {
 			return result, err
 		}
@@ -67,9 +76,11 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 			}
 		}
 	}
-	info, err := probeVideo(ctx, tools, input)
-	if err != nil {
-		return result, err
+	if info.Input == "" {
+		info, err = probeVideo(ctx, tools, input)
+		if err != nil {
+			return result, err
+		}
 	}
 	if len(publisherChapters) > 0 {
 		info.Chapters = publisherChapters
@@ -88,7 +99,7 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 	}
 	cueReady := make(chan cueResult)
 	go func() {
-		captions, status, err := evidenceCueData(ctx, tools, info, start, end, out, options)
+		captions, status, err := evidenceCueData(ctx, tools, info, start, end, out, options, sourceGeneration)
 		cueReady <- cueResult{captions: captions, status: status, err: err}
 	}()
 	result.renderedVideo, err = renderVideo(ctx, tools, info, start, end, out, videoLayout{packTiles: true})
@@ -123,7 +134,7 @@ func prepareEvidence(ctx context.Context, tools toolset, input, out string, opti
 	return result, nil
 }
 
-func evidenceCueData(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out string, options evidenceOptions) (captionsResult, string, error) {
+func evidenceCueData(ctx context.Context, tools toolset, info mediaInfo, start, end float64, out string, options evidenceOptions, sourceGeneration string) (captionsResult, string, error) {
 	subtitle, err := resolveSubtitle(info.Input, options.subtitle)
 	if err != nil {
 		return captionsResult{}, "", err
@@ -142,7 +153,11 @@ func evidenceCueData(ctx context.Context, tools toolset, info mediaInfo, start, 
 	if err != nil || model == "" {
 		return captions, status, err
 	}
-	captions, err = transcribeBatch(ctx, tools, info, captions, out, model, options.language)
+	if sourceGeneration != "" {
+		captions, err = cachedTranscription(ctx, tools, info, captions, out, model, options.language, sourceGeneration)
+	} else {
+		captions, err = transcribeBatch(ctx, tools, info, captions, out, model, options.language)
+	}
 	return captions, "no_cues", err
 }
 

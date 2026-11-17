@@ -11,7 +11,7 @@ Use the video and question from the request or conversation. `@watch-video` with
 For a whole-video overview, group the main developments chronologically across the beginning, middle, and ending. Use captions throughout the requested span for narration and the storyboard for visual claims.
 Use source chapter times to organize a long overview and locate follow-ups. Start from the returned captions and images. Use a brief lookup when a material point is unclear.
 
-When this skill's MCP tools are available, call `video_evidence` for the overview or `video_frame` for a known visual moment. Each returns the image and its time references together. Pass a URL or absolute local video path and reuse the returned local path for follow-up. For a user-supplied frame timestamp, pass it as written, including for requests such as “around 00:16”.
+When this skill's MCP tools are available, call `video_evidence` for the overview or `video_frame` for a known visual moment. Each returns the image and its time references together. For an overview requested with only a link or file, pass just `input` with the URL or absolute local path. Reuse the returned local path for follow-up. For a user-supplied frame timestamp, pass it as written, including for requests such as “around 00:16”.
 
 For exact dialogue or cue times, call `video_captions` with the caption reference and a short interval. Pass any words the user supplies as `quote` and use the matched text and span together. For a quote chosen from the result, take the start of its first quoted cue and the end of its last quoted cue. For missing evidence or a new visual range, call `video_evidence` on the narrower window.
 
