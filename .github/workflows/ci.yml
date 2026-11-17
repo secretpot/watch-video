@@ -72,7 +72,7 @@ jobs:
           $archive = "dist/$env:ARCHIVE"
           New-Item -ItemType Directory "$stage/bin", $unpacked | Out-Null
           go build -trimpath -o "$stage/bin/$env:EXE" .
-          Copy-Item -Path SKILL.md, README.md, LICENSE -Destination $stage
+          Copy-Item -Path SKILL.md, README.md, INSTALL.md, BENCHMARK.md, LICENSE -Destination $stage
           if ($IsWindows) {
               Compress-Archive -LiteralPath $stage -DestinationPath $archive
               Expand-Archive -LiteralPath $archive -DestinationPath $unpacked
@@ -91,7 +91,9 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           $bundle = Resolve-Path 'dist/unpacked/watch-video'
           $binary = Join-Path $bundle "bin/$env:EXE"
-          Get-Item (Join-Path $bundle 'SKILL.md'), (Join-Path $bundle 'LICENSE') | Out-Null
+          foreach ($file in @('SKILL.md', 'README.md', 'INSTALL.md', 'BENCHMARK.md', 'LICENSE')) {
+              Get-Item (Join-Path $bundle $file) | Out-Null
+          }
           $media = Join-Path $env:RUNNER_TEMP '测试 video'
           New-Item -ItemType Directory $media | Out-Null
           $clip = Join-Path $media '示例 clip.mp4'
@@ -123,6 +125,18 @@ jobs:
           $result = & $binary captions $clip --start 1 --end 2 --subtitle $captions --out (Join-Path $media 'captions') | ConvertFrom-Json
           if ($result.source -ne 'sidecar' -or $result.cues.Count -ne 1 -or $result.cues[0].text -ne 'Before the cutoff') {
               throw 'Caption cutoff did not hold'
+          }
+
+          $requests = @(
+              '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}'
+              '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+              '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+          )
+          $responses = $requests | & $binary mcp | ForEach-Object { ConvertFrom-Json -InputObject $_ }
+          $server = ($responses | Where-Object id -eq 1).result.serverInfo
+          $names = ($responses | Where-Object id -eq 2).result.tools.name | Sort-Object
+          if ($server.name -ne 'watch-video' -or ($names -join ',') -ne 'video_captions,video_evidence,video_frame') {
+              throw 'Packaged MCP server did not advertise its video tools'
           }
 
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

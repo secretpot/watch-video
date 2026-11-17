@@ -11,6 +11,7 @@ import (
 )
 
 const mcpProtocolVersion = "2025-11-25"
+const watchVideoVersion = "0.2.0"
 
 type mcpTool struct {
 	Name        string          `json:"name"`
@@ -199,7 +200,7 @@ func serveMCP(ctx context.Context, input io.Reader, output io.Writer, tools []mc
 				response.Result = map[string]any{
 					"protocolVersion": version,
 					"capabilities":    map[string]any{"tools": struct{}{}},
-					"serverInfo":      map[string]string{"name": "watch-video", "version": "0.1.0"},
+					"serverInfo":      map[string]string{"name": "watch-video", "version": watchVideoVersion},
 				}
 				initialized = true
 			case !initialized:

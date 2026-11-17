@@ -2,6 +2,14 @@
 
 Give a vision-capable model one contact sheet with timestamps, then inspect only the parts that matter. The Agent Skill works with a host that can execute a local command and open JPEGs. You can also run the CLI yourself and attach the resulting images and timestamped text to any model that accepts those inputs.
 
+## Install
+
+Give your agent the project URL and ask it to install Watch Video. The [installation guide](INSTALL.md) covers choosing the release for your platform, verifying SHA-256, installing media tools, and setting up the Skill and MCP server.
+
+```text
+Install and verify Watch Video in this agent. https://github.com/secretpot/watch-video
+```
+
 ## Use in an agent
 
 ```text
@@ -9,59 +17,13 @@ Give a vision-capable model one contact sheet with timestamps, then inspect only
 @watch-video <video_url> 这个视频说了什么
 ```
 
-With just the link, the agent gives a timestamped overview. A single CLI call prepares the local video, a compact storyboard, and timestamped text when available. Follow-up questions reuse that video and inspect only the relevant moment or interval.
+With just the link, the agent gives a timestamped overview from a storyboard and available captions. Follow-up questions reuse that evidence and inspect the relevant moment or interval. For example, in the same conversation ask `What appears on screen at 00:16?`
 
 When the host passes `@watch-video` as text, the installed Skill can be selected from its name and description. For native explicit selection, use `$watch-video` in Codex or select `watch-video` from DeepSeek Harness's `/` menu, followed by the same URL and optional question. [Codex skill selection](https://developers.openai.com/blog/eval-skills#3-manually-trigger-the-skill-to-expose-hidden-assumptions) · [DeepSeek Harness skill selection](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-skill/README.md#use-this-package)
 
-## Install
+## Benchmarks
 
-Download the package and its matching `.sha256` file from [GitHub Releases](https://github.com/secretpot/watch-video/releases/latest). The Go executable is included. Install FFmpeg and ffprobe **8.0 or later** for your platform.
-
-| Platform | Package | FFmpeg setup |
-| --- | --- | --- |
-| macOS 15+ on Apple Silicon | `watch-video-macos-arm64.tar.gz` | `brew install ffmpeg` |
-| Windows 11 x86_64 preview | `watch-video-windows-amd64-preview.zip` | `winget install --id Gyan.FFmpeg --exact --source winget` |
-
-On Windows, you can also use a [Gyan portable build](https://www.gyan.dev/ffmpeg/builds/) and add its `bin` directory to `PATH`. Open a new terminal or restart your agent after changing its environment. Windows CI runs on Windows Server 2025 x64. Windows 11 x64 desktop testing is pending.
-
-**macOS**
-
-```sh
-shasum -a 256 -c watch-video-macos-arm64.tar.gz.sha256
-tar -xzf watch-video-macos-arm64.tar.gz
-./watch-video/bin/watch-video doctor
-```
-
-**Windows PowerShell**
-
-```powershell
-$archive = 'watch-video-windows-amd64-preview.zip'
-$expected = ((Get-Content "$archive.sha256" -Raw) -split '\s+')[0]
-if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne $expected) { throw 'SHA-256 mismatch' }
-Expand-Archive $archive -DestinationPath .
-& .\watch-video\bin\watch-video.exe doctor
-```
-
-macOS Gatekeeper or Windows SmartScreen may flag a new GitHub download. You can build the executable from the tagged source using the instructions below. [macOS Gatekeeper](https://support.apple.com/en-us/102445) · [Windows SmartScreen](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation)
-
-For a skill-enabled agent, place the extracted `watch-video` folder in its skills directory. If a tool is installed outside the agent's `PATH`, pass `--tools-dir DIR` to the relevant command.
-
-### Optional tools
-
-- **Public recordings.** Put the official `yt-dlp_macos` or Windows `yt-dlp.exe` on `PATH` under the command name `yt-dlp`. Some sites need an additional JavaScript runtime. Support depends on the upstream extractor and the site's ability to deliver an anonymous recording. Native HLS and DASH downloads use up to four concurrent fragments. [yt-dlp release files](https://github.com/yt-dlp/yt-dlp#release-files) · [YouTube setup](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
-
-### Local speech recognition
-
-On macOS, run `brew install whisper.cpp`. On Windows, extract `whisper-bin-x64.zip` from the linked upstream build, keep its DLLs next to `whisper-cli.exe`, and add the executable directory to `PATH`. [whisper.cpp setup](https://github.com/ggml-org/whisper.cpp#quick-start) · [Windows x64 binaries](https://github.com/ggml-org/whisper.cpp/releases/expanded_assets/b5454)
-
-Download the multilingual [ggml-base-q5_1.bin model](https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base-q5_1.bin) once and place it at the default path for your system:
-
-| Platform | Default model path |
-| --- | --- |
-| macOS | `~/Library/Application Support/watch-video/ggml-base-q5_1.bin` |
-| Windows | `%LOCALAPPDATA%\watch-video\ggml-base-q5_1.bin` |
-
-`evidence` checks this path automatically when usable subtitles are unavailable. Pass `--whisper-model FILE` to select a different compatible model or `--no-asr` for visual tasks. Whisper runs on the CPU and estimates when each phrase was spoken. If Windows Whisper rejects a model path containing non-ASCII characters, use an ASCII-only model path with the CLI option. [Whisper Windows path issue](https://github.com/ggml-org/whisper.cpp/issues/4018)
+The [three-site A/B results](BENCHMARK.md) report elapsed time, total tokens, and uncached input separately for a timestamped overview and a follow-up on Bilibili, YouTube, and Dailymotion.
 
 ## CLI reference
 
@@ -78,7 +40,7 @@ watch-video captions "clip.mp4" --batch --whisper-model "model.bin" --out transc
 watch-video fetch "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" --out download
 ```
 
-`evidence` accepts a local file or a single public HTTP(S) recording. For a public URL, it downloads an authored subtitle when the extractor declares the source language and advertises a track with exactly the same tag. Pass `--subtitle-lang CODE` to select a different track. An explicit `--subtitle` file or `--no-asr` skips automatic subtitle downloads. The storyboard omits unused grid space while retaining the sampled frames at their extracted resolution. Storyboard and caption preparation run independently. Read the returned index for the absolute local video path, the JPEG path and tile times, and available caption artifacts. Captions use an explicit or adjacent SRT/VTT, then an embedded text track, then local Whisper. If captions are unavailable, the index reports why and retains the storyboard and any downloaded video. The compact `captions.txt` is for an overview and `captions.json` keeps individual cue boundaries.
+`evidence` accepts a local file or a single public HTTP(S) recording. Native HLS and DASH downloads use up to four concurrent fragments. For a public URL, it downloads an authored subtitle when the extractor declares the source language and advertises a track with exactly the same tag. Pass `--subtitle-lang CODE` to select a different track. An explicit `--subtitle` file or `--no-asr` skips automatic subtitle downloads. The storyboard omits unused grid space while retaining the sampled frames at their extracted resolution. Storyboard and caption preparation run independently. Read the returned index for the absolute local video path, the JPEG path and tile times, and available caption artifacts. Captions use an explicit or adjacent SRT/VTT, then an embedded text track, then local Whisper. If captions are unavailable, the index reports why and retains the storyboard and any downloaded video. The compact `captions.txt` is for an overview and `captions.json` keeps individual cue boundaries.
 
 `overview` produces at most nine tiles in one 960×540 JPEG. Scene-based sampling prefers footage between detected cuts and scans at up to two frames per second for ranges over two minutes. `focus` writes JPEGs with a long edge up to 1280 pixels. `--at` takes the first source frame at or after the requested moment, before any `--end` cutoff. The index reports the actual frame time. Use seconds, `MM:SS`, or `HH:MM:SS` for all command time arguments. Ranges are on the original video timeline with an exclusive end.
 
@@ -88,32 +50,9 @@ For long ranges covered by two to nine consecutive source chapters, the overview
 
 ## Optional MCP server
 
-Start a build from this source with `watch-video mcp` as a local stdio server. A host that forwards images from MCP tool results can receive the JPEG and timestamped text in the same response. `video_evidence` returns one storyboard for a local file or a public recording. `video_frame` returns one detailed frame for a known time. When the overview has captions, `video_captions` uses its caption reference to return exact cue boundaries in a requested interval without decoding the video or transcribing it again. An optional `quote` aligns matching words to the start of their first caption and the end of their last caption. For long transcripts, the server sends timestamped excerpts and indicates when to request a narrower interval. The local video path and caption reference can be reused while that server keeps its temporary evidence.
+Start the bundled CLI with `watch-video mcp` as a local stdio server. A host that forwards images from MCP tool results can receive the JPEG and timestamped text in the same response. `video_evidence` returns one storyboard for a local file or a public recording. `video_frame` returns one detailed frame for a known time. When the overview has captions, `video_captions` uses its caption reference to return exact cue boundaries in a requested interval without decoding the video or transcribing it again. An optional `quote` aligns matching words to the start of their first caption and the end of their last caption. For long transcripts, the server sends timestamped excerpts and indicates when to request a narrower interval. The local video path and caption reference can be reused while that server keeps its temporary evidence.
 
-In Codex, add the following to your configuration and replace the command with the absolute path to the binary.
-
-```toml
-[mcp_servers.watch_video]
-command = "/path/to/watch-video"
-args = ["mcp"]
-tool_timeout_sec = 300
-```
-
-In DeepSeek Harness, add this entry to the profile overlay and use a vision-enabled model with attachments enabled.
-
-```yaml
-- insert:
-    - id: watch-video-mcp
-      name: '@deepseek-ai/dsh-mcp-client'
-      config:
-        serverName: watch_video
-        transport: stdio
-        command: /path/to/watch-video
-        args: [mcp]
-        toolCallTimeoutMs: 300000
-```
-
-Allow enough tool time for local transcription. Add `--tools-dir` and its directory to the server arguments if the host's PATH does not include FFmpeg. The Skill uses the CLI when the server tools are unavailable. [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) · [DeepSeek Harness MCP configuration](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md)
+See the [MCP configuration examples](INSTALL.md#configure-mcp) for Codex and DeepSeek Harness. The Skill uses the CLI when MCP is unavailable.
 
 ## Build and contribute
 
