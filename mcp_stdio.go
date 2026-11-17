@@ -11,7 +11,7 @@ import (
 )
 
 const mcpProtocolVersion = "2025-11-25"
-const watchVideoVersion = "0.2.0"
+const watchVideoVersion = "0.3.0"
 
 type mcpTool struct {
 	Name        string          `json:"name"`

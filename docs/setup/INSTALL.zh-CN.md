@@ -1,4 +1,4 @@
-# 安装 watch-video v0.2.0
+# 安装 watch-video v0.3.0
 
 [English](INSTALL.md) · [项目首页](../../README.zh-CN.md)
 
@@ -17,7 +17,7 @@
 
 ## 校验并安装发布包
 
-从同一个版本下载压缩包和配套的 `.sha256` 文件。在空目录中运行下面的命令。Codex 和 DeepSeek Harness 都能从默认的用户 Skill 目录 `~/.agents/skills` 发现安装好的 Skill。如果宿主使用其他 Skill 目录，请替换为该路径。 [v0.2.0 发布](https://github.com/secretpot/watch-video/releases/tag/v0.2.0) · [Codex Skill 目录](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) · [Harness Skill 目录](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md)
+从同一个版本下载压缩包和配套的 `.sha256` 文件。在空目录中运行下面的命令。Codex 和 DeepSeek Harness 都能从默认的用户 Skill 目录 `~/.agents/skills` 发现安装好的 Skill。如果宿主使用其他 Skill 目录，请替换为该路径。 [v0.3.0 发布](https://github.com/secretpot/watch-video/releases/tag/v0.3.0) · [Codex Skill 目录](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) · [Harness Skill 目录](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md)
 
 升级时，检查用户和项目的 Skill 目录中是否已有 `watch-video`，包括旧版 Codex 设置中的 `~/.codex/skills` 和 Harness 的 `~/.dsh/skills`。运行安装命令前，把旧版移出宿主扫描的 Skill 目录。如果继续使用宿主专用的 Skill 目录，请安装到该目录，并将 MCP 配置指向其中的可执行文件。
 
@@ -25,7 +25,7 @@
 
 ```sh
 asset=watch-video-macos-arm64.tar.gz
-release=https://github.com/secretpot/watch-video/releases/download/v0.2.0
+release=https://github.com/secretpot/watch-video/releases/download/v0.3.0
 skills_dir="$HOME/.agents/skills"
 
 curl -fLO "$release/$asset" &&
@@ -42,7 +42,7 @@ mv watch-video "$skills_dir/watch-video" &&
 
 ```powershell
 $asset = 'watch-video-windows-amd64-preview.zip'
-$release = 'https://github.com/secretpot/watch-video/releases/download/v0.2.0'
+$release = 'https://github.com/secretpot/watch-video/releases/download/v0.3.0'
 $skillsDir = Join-Path $HOME '.agents\skills'
 $destination = Join-Path $skillsDir 'watch-video'
 
@@ -95,6 +95,8 @@ Invoke-WebRequest 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggm
 ## 配置 MCP
 
 MCP 不可用时，Skill 仍可通过 CLI 工作。要在兼容的宿主上启用 MCP，使用已安装的可执行文件绝对路径作为命令，第一项参数填 `mcp`。如果宿主找不到 FFmpeg，而媒体工具装在 Apple Silicon 上 Homebrew 的默认目录，可将 `args` 设为 `['mcp', '--tools-dir', '/opt/homebrew/bin']`。工具装在其他位置时，请替换为实际目录。
+
+缓存位置和保留期限见[公开录播缓存](../usage/README.zh-CN.md#公开录播缓存)。
 
 ### Codex
 

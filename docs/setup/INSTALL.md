@@ -1,4 +1,4 @@
-# Install watch-video v0.2.0
+# Install watch-video v0.3.0
 
 [简体中文](INSTALL.zh-CN.md) · [Project home](../../README.md)
 
@@ -17,7 +17,7 @@ For public recording URLs, put the official `yt-dlp_macos` or `yt-dlp.exe` on `P
 
 ## Verify and install the release
 
-Use the archive and its matching `.sha256` from the same release. Run the commands in an empty working directory. Codex and DeepSeek Harness can both discover the installed bundle in the default user skill directory, `~/.agents/skills`. If your host uses a different skills directory, substitute that path. [v0.2.0 release](https://github.com/secretpot/watch-video/releases/tag/v0.2.0) · [Codex skill directories](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) · [Harness skill directories](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md)
+Use the archive and its matching `.sha256` from the same release. Run the commands in an empty working directory. Codex and DeepSeek Harness can both discover the installed bundle in the default user skill directory, `~/.agents/skills`. If your host uses a different skills directory, substitute that path. [v0.3.0 release](https://github.com/secretpot/watch-video/releases/tag/v0.3.0) · [Codex skill directories](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) · [Harness skill directories](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md)
 
 For an upgrade, check for an existing `watch-video` in user and project skill directories, including `~/.codex/skills` on older Codex setups and `~/.dsh/skills` in Harness. Move the prior bundle out of scanned skill directories before running the install commands. If you keep a host-specific skill directory, use it for the destination and point the MCP entry at that binary.
 
@@ -25,7 +25,7 @@ For an upgrade, check for an existing `watch-video` in user and project skill di
 
 ```sh
 asset=watch-video-macos-arm64.tar.gz
-release=https://github.com/secretpot/watch-video/releases/download/v0.2.0
+release=https://github.com/secretpot/watch-video/releases/download/v0.3.0
 skills_dir="$HOME/.agents/skills"
 
 curl -fLO "$release/$asset" &&
@@ -42,7 +42,7 @@ mv watch-video "$skills_dir/watch-video" &&
 
 ```powershell
 $asset = 'watch-video-windows-amd64-preview.zip'
-$release = 'https://github.com/secretpot/watch-video/releases/download/v0.2.0'
+$release = 'https://github.com/secretpot/watch-video/releases/download/v0.3.0'
 $skillsDir = Join-Path $HOME '.agents\skills'
 $destination = Join-Path $skillsDir 'watch-video'
 
@@ -95,6 +95,8 @@ Invoke-WebRequest 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggm
 ## Configure MCP
 
 The Skill works through the CLI when MCP is unavailable. To enable MCP in any compatible host, use the absolute installed executable path as the command and `mcp` as its first argument. If the host cannot find FFmpeg, set `args` to `['mcp', '--tools-dir', '/opt/homebrew/bin']` for a default Apple Silicon Homebrew installation, or substitute the actual media tool directory.
+
+For cache locations and retention, see [Public recording cache](../usage/README.md#public-recording-cache).
 
 ### Codex
 
