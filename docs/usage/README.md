@@ -4,7 +4,7 @@
 
 ## Agent usage
 
-Send `@watch-video <video_url>` for a timestamped overview. Use a local video path in place of the URL, or append a question to focus the first answer. Ask follow-ups in the same conversation so the agent can reuse the local video and inspect the relevant moment or interval.
+Send `@watch-video <video_url>` for a timestamped overview. With MCP enabled, the agent makes one `video_evidence` call and answers from the storyboard and available captions. Use a local video path in place of the URL, or append a question to focus the first answer. Ask for a detail in the same conversation to inspect the relevant moment or interval using the existing evidence.
 
 When a host passes `@watch-video` as text, the agent can select the installed Skill by name and description. To select it explicitly, use `$watch-video` in Codex or select `watch-video` from DeepSeek Harness's `/` menu. [Codex skill selection](https://developers.openai.com/blog/eval-skills#3-manually-trigger-the-skill-to-expose-hidden-assumptions) · [DeepSeek Harness skill selection](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-skill/README.md#use-this-package)
 
@@ -49,13 +49,15 @@ For public URLs, `evidence` automatically downloads an authored subtitle when th
 
 Start the bundled CLI with `watch-video mcp` as a local stdio server. A host that forwards images from MCP tool results can receive the JPEG and timestamped text in the same response.
 
-- `video_evidence` returns one storyboard for a local file or public recording along with available captions. For long transcripts, it sends timestamped excerpts and indicates when to request a narrower interval.
+- `video_evidence` returns one storyboard for a local file or public recording along with available captions. For long transcripts, it sends timestamped excerpts. Its text also includes the storyboard path for local hosts that need to open the JPEG from disk.
 - `video_frame` returns one detailed frame for a known time.
 - `video_captions` uses the overview's caption reference to return exact cue boundaries for a requested interval without decoding or transcribing the video again. An optional `quote` aligns matching words to the start of their first caption and the end of their last caption.
 
 Reuse the temporary video path and caption reference within the same MCP session. In a new chat or after the server restarts, call `video_evidence` with the original URL to get fresh references. The server can reuse the cached download.
 
 The Skill uses the CLI when MCP is unavailable. [MCP configuration for Codex and DeepSeek Harness](../setup/INSTALL.md#configure-mcp)
+
+In hosts that invoke MCP through code, forward the text and the JPEG as separate content blocks. Serializing the entire response turns the JPEG into base64 text, which can truncate the evidence. If Codex asks for tool approval, it applies to the call under the host's configured approval policy.
 
 ### Public recording cache
 

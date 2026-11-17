@@ -4,7 +4,7 @@
 
 ## 在 Agent 中使用
 
-用 `@watch-video <视频链接>` 获取带时间码的概览。也可以使用本地视频路径，或在链接后加一个问题，指定首轮回答的重点。在同一会话追问，Agent 可以复用本地视频并检查相关时刻或区间。
+用 `@watch-video <视频链接>` 获取带时间码的概览。启用 MCP 时，Agent 调用一次 `video_evidence`，根据分镜和已有字幕回答。也可以使用本地视频路径，或在链接后加一个问题，指定首轮回答的重点。在同一会话追问细节时，Agent 可复用已有证据，回看相关时刻或区间。
 
 当宿主把 `@watch-video` 当作文本传给 Agent 时，Agent 可按名称和说明选择已安装的 Skill。要显式选择 Skill，在 Codex 用 `$watch-video`，在 DeepSeek Harness 的 `/` 菜单中选择 `watch-video`。[Codex Skill 选择](https://developers.openai.com/blog/eval-skills#3-manually-trigger-the-skill-to-expose-hidden-assumptions) · [DeepSeek Harness Skill 选择](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-skill/README.md#use-this-package)
 
@@ -45,13 +45,15 @@ watch-video fetch "https://interactive-examples.mdn.mozilla.net/media/cc0-videos
 
 用 `watch-video mcp` 启动本地 stdio 服务。支持转发 MCP 图片结果的宿主，可以从同一次调用收到 JPEG 和带时间码的文本。
 
-- `video_evidence` 为本地文件或公开录播生成一张分镜图，也可指定要看的时间区间。
+- `video_evidence` 为本地文件或公开录播返回一张分镜图和可用字幕，也可指定时间区间。文本中包含分镜路径，能访问该路径的宿主可以直接打开 JPEG。
 - `video_frame` 根据已知时间返回单张清晰帧和实际帧时间。
 - `video_captions` 用概览返回的字幕引用查询短区间内各条字幕的起止时间，直接读取已有结果。可用 `quote` 匹配原话，时间范围从第一条匹配字幕的起点到最后一条匹配字幕的终点。
 
-字幕过长时，工具会返回带时间码的摘录，并提示缩小查询区间。在同一个 MCP 会话内可复用临时视频路径和字幕引用。开启新聊天或服务重启后，用原始 URL 调用 `video_evidence` 获取新的路径和引用，服务可复用缓存中的下载内容。
+字幕过长时，工具会返回带时间码的摘录。在同一个 MCP 会话内可复用临时视频路径和字幕引用。开启新聊天或服务重启后，用原始 URL 调用 `video_evidence` 获取新的路径和引用，服务可复用缓存中的下载内容。
 
 Skill 在 MCP 不可用时会使用 CLI。[Codex 和 DeepSeek Harness 的 MCP 配置](../setup/INSTALL.zh-CN.md#配置-mcp)
+
+通过代码调用 MCP 时，分别转发文本和 JPEG 内容块。序列化整个响应会把 JPEG 变成 base64 文本，可能使证据被截断。Codex 是否要求工具审批由宿主配置决定。
 
 ### 公开录播缓存
 

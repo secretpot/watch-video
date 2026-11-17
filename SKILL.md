@@ -6,14 +6,13 @@ license: MIT
 
 # Watch video
 
-Use the video and question from the request or conversation. `@watch-video` with a URL or file requests a concise, timestamped overview.
+Use the video and question from the request or conversation.
 
-For a whole-video overview, group the main developments chronologically across the beginning, middle, and ending. Use captions throughout the requested span for narration and the storyboard for visual claims.
-Use source chapter times to organize a long overview and locate follow-ups. Start from the returned captions and images. Use a brief lookup when a material point is unclear.
+**Link or file only.** Call `video_evidence` once with just `input` (the original URL or absolute local path). Use its storyboard, captions and any source chapters to give a concise, timestamped overview across the beginning, middle and end. With a successful result, answer from that evidence and state any material gaps. Leave finer lookups for a specific question.
 
-When this skill's MCP tools are available, call `video_evidence` for the overview or `video_frame` for a known visual moment. Each returns the image and its time references together. For an overview requested with only a link or file, pass just `input` with the URL or absolute local path. Reuse the returned local path for follow-up. For a user-supplied frame timestamp, pass it as written, including for requests such as “around 00:16”.
+**Consume the result.** Use the returned text and JPEG as separate content blocks. In Codex `functions.exec`, call `text(block.text)` for text and `image(block)` for images. Printing the whole response serializes the JPEG to base64 and can truncate the evidence. If the host can only surface text, open the returned storyboard file where the MCP filesystem is accessible.
 
-For exact dialogue or cue times, call `video_captions` with the caption reference and a short interval. Pass any words the user supplies as `quote` and use the matched text and span together. For a quote chosen from the result, take the start of its first quoted cue and the end of its last quoted cue. For missing evidence or a new visual range, call `video_evidence` on the narrower window.
+**Specific question.** Use the smallest relevant time range. For a known visual moment, call `video_frame` on the returned local video path and pass the timestamp as written. For dialogue or exact cue boundaries, call `video_captions` with the existing caption reference and a short interval. Pass the user's quoted words as `quote` when given. For a quote chosen from the returned cues, use the start of its first cue and the end of its last cue. For a visual range or dialogue with no caption reference, call `video_evidence` on the local video path with that range. Set `no_asr` for a visual-only lookup.
 
 ## Shell fallback
 

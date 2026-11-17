@@ -67,6 +67,15 @@ title=结尾
 	if len(content) != 2 || content[0].Type != "text" || content[1].Type != "image" {
 		t.Fatalf("expected one text and one image, got %+v", content)
 	}
+	_, storyboardLine, _ := strings.Cut(content[0].Text, "\nStoryboard image: ")
+	storyboardPath, _, _ := strings.Cut(storyboardLine, "\n")
+	if !filepath.IsAbs(storyboardPath) {
+		t.Fatalf("expected an absolute storyboard path, got %q", storyboardPath)
+	}
+	jpegBytes, err := os.ReadFile(storyboardPath)
+	if err != nil || !bytes.Equal(jpegBytes, content[1].Data) {
+		t.Fatalf("storyboard path does not match the returned image: %v", err)
+	}
 	chapters, captions, hasCaptionRef := strings.Cut(content[0].Text, "\nCaption reference:")
 	const want = "Source chapter labels and time ranges (publisher metadata)\n" +
 		"- 00:00:00.000000–00:00:40.000000  开头\n" +

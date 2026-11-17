@@ -25,7 +25,7 @@ const chapterTitleBudget = 120
 var videoMCPTools = []mcpTool{
 	{
 		Name:        videoEvidenceTool,
-		Description: "Watch a video in one call. Returns a timestamped storyboard, source chapter labels when available, and captions. Reuse the returned local video path for follow-up.",
+		Description: "Get a timestamped video overview in one call, with a storyboard, any source chapters, and captions. Use the result for a link-only overview. Reuse the local video path and caption reference for requested details.",
 		InputSchema: json.RawMessage(`{
 			"type":"object","required":["input"],"additionalProperties":false,
 			"properties":{
@@ -183,11 +183,15 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 	if err := json.Unmarshal(manifest, &result); err != nil {
 		return nil, err
 	}
+	imagePath, err := filepath.Abs(filepath.Join(out, result.Images[0].Path))
+	if err != nil {
+		return nil, err
+	}
 	var body strings.Builder
 	if command == "focus" {
 		fmt.Fprintf(&body, "Source frame time: %.6f seconds.", result.Frames[0].Time)
 	} else {
-		fmt.Fprintf(&body, "Local video: %s\nWindow: %.3f to %.3f seconds (duration %.3f).\nStoryboard tiles:", result.Video, result.Start, result.End, result.Duration)
+		fmt.Fprintf(&body, "Local video: %s\nWindow: %.3f to %.3f seconds (duration %.3f).\nStoryboard image: %s\nStoryboard tiles:", result.Video, result.Start, result.End, result.Duration, imagePath)
 		for _, frame := range result.Frames {
 			fmt.Fprintf(&body, " row %d col %d = %.3f s;", frame.Row, frame.Column, frame.Time)
 		}
@@ -208,7 +212,7 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 			transcript, sampled := boundedTranscript(string(data))
 			fmt.Fprintf(&body, "\nCaption reference: %s\nCaptions (%s):\n%s", filepath.Base(request), result.Captions.Source, transcript)
 			if sampled {
-				body.WriteString("\nCaption excerpts sampled across this window. Request a narrower window for missing dialogue.")
+				body.WriteString("\nCaption excerpts sampled across this window. For a specific dialogue follow-up, use video_captions with the reference above.")
 			}
 		} else {
 			fmt.Fprintf(&body, "\nCaptions unavailable (%s).", result.Captions.Status)
@@ -217,7 +221,7 @@ func runVideoMCPTool(ctx context.Context, scratch, toolsDir, name string, data j
 			}
 		}
 	}
-	image, err := os.ReadFile(filepath.Join(out, result.Images[0].Path))
+	image, err := os.ReadFile(imagePath)
 	if err != nil {
 		return nil, err
 	}
