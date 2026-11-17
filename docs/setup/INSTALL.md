@@ -1,5 +1,7 @@
 # Install watch-video v0.2.0
 
+[简体中文](INSTALL.zh-CN.md) · [Project home](../../README.md)
+
 Install the release on the machine that runs the agent. The archive includes the CLI and the `watch-video` Skill. The CLI also works on its own, and any local stdio MCP host that forwards images can use it as a server.
 
 ## Choose a package and install media tools
@@ -57,7 +59,7 @@ Move-Item -LiteralPath '.\watch-video' -Destination $destination -ErrorAction St
 
 `doctor` should report `"ready": true` and paths and versions for `ffmpeg` and `ffprobe`. If the agent cannot find installed tools through its environment, run `watch-video doctor --tools-dir DIR` with the absolute directory containing the media executables. Use that same directory in the server arguments below.
 
-If macOS Gatekeeper or Windows SmartScreen flags the downloaded executable, you can build it from the tagged source. [Gatekeeper](https://support.apple.com/en-us/102445) · [SmartScreen](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation) · [Source build](README.md#build-and-contribute)
+If macOS Gatekeeper or Windows SmartScreen flags the downloaded executable, you can build it from the tagged source. [Gatekeeper](https://support.apple.com/en-us/102445) · [SmartScreen](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation) · [Source build](../development/README.md)
 
 ## Optional speech recognition
 

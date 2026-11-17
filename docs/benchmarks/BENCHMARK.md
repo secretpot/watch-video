@@ -1,5 +1,7 @@
 # Watch Video v0.2.0 benchmark
 
+[简体中文](BENCHMARK.zh-CN.md) · [Project home](../../README.md)
+
 In one two-turn run per video, DeepSeek Harness with Watch Video used **66.8–69.5% fewer uncached input tokens** and took **57.3–88.9% less time** across all three videos. Codex used fewer total tokens on all three, while uncached input increased on Dailymotion. The gains measure the agent workflows on these fixtures.
 
 ## Setup
