@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -133,20 +134,28 @@ func transcribeWindow(ctx context.Context, tools toolset, info mediaInfo, start,
 		return nil, err
 	}
 	defer os.RemoveAll(tmp)
-	wav := filepath.Join(tmp, "audio.wav")
-	prefix := filepath.Join(tmp, "transcript")
-	if err := writeSpeechWAV(wav, pcm); err != nil {
+	const audioFile = "audio.wav"
+	const transcriptFile = "transcript"
+	if err := writeSpeechWAV(filepath.Join(tmp, audioFile), pcm); err != nil {
 		return nil, fmt.Errorf("write audio for Whisper: %w", err)
 	}
 	if language == "" {
 		language = "auto"
 	}
+	// Windows Whisper builds can mishandle non-ASCII arguments. The usual
+	// model and working directories share an AppData ancestor, so a relative
+	// model path avoids passing the user's profile name to the executable.
+	if runtime.GOOS == "windows" {
+		if relative, err := filepath.Rel(tmp, model); err == nil {
+			model = relative
+		}
+	}
 	// Agent processes may lack Metal access even when Whisper can see the GPU.
-	_, _, err = tools.run(ctx, "whisper-cli", "-ng", "-m", model, "-f", wav, "-l", language, "-osrt", "-of", prefix)
+	_, _, err = tools.runIn(ctx, tmp, "whisper-cli", "-ng", "-m", model, "-f", audioFile, "-l", language, "-osrt", "-of", transcriptFile)
 	if err != nil {
 		return nil, fmt.Errorf("transcribe selected audio with Whisper: %w", err)
 	}
-	data, err := os.ReadFile(prefix + ".srt")
+	data, err := os.ReadFile(filepath.Join(tmp, transcriptFile+".srt"))
 	if err != nil {
 		return nil, fmt.Errorf("read Whisper transcript: %w", err)
 	}

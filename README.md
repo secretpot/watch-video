@@ -6,10 +6,10 @@ Watch Video gives a vision-capable agent a timestamped storyboard and available 
 
 ## Install
 
-The [installation guide](docs/setup/INSTALL.md) covers macOS 15+ on Apple Silicon, Windows 11 x64 preview, media tools, and optional MCP setup. To have your agent install it, send this request.
+Give the agent the release archive and say “Install Watch Video.” The default setup prepares FFmpeg, Whisper and its local model, then verifies speech recognition on a built-in video with no subtitles. Use the same flow from the project URL if you have not downloaded the archive. [Installation guide](docs/setup/INSTALL.md)
 
 ```text
-Install and verify Watch Video in this agent. https://github.com/secretpot/watch-video
+Install Watch Video. https://github.com/secretpot/watch-video
 ```
 
 ## Use in an agent

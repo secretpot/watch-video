@@ -37,29 +37,6 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install FFmpeg on macOS
-        if: runner.os == 'macOS'
-        run: brew install ffmpeg
-
-      - name: Install FFmpeg on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $version = '9.0.2'
-          $asset = "ffmpeg-$version-essentials_build.7z"
-          $archive = Join-Path $env:RUNNER_TEMP $asset
-          $tools = Join-Path $env:RUNNER_TEMP 'watch-video-tools'
-          Invoke-WebRequest "https://github.com/GyanD/codexffmpeg/releases/download/$version/$asset" -OutFile $archive
-          if ((Get-FileHash $archive -Algorithm SHA256).Hash -ne '4705843ccaaf54257c16ad90f3e952ece33c17df964ecf7bfdbb0f49c7171077') {
-              throw 'FFmpeg archive checksum did not match'
-          }
-          & 7z x $archive "-o$tools" -y
-          Join-Path $tools "ffmpeg-$version-essentials_build/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Run Go tests
-        run: go test ./...
-
       - name: Build and unpack release archive
         env:
           EXE: ${{ matrix.exe }}
@@ -83,6 +60,25 @@ jobs:
           }
           $hash = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $env:ARCHIVE" | Set-Content "$archive.sha256" -Encoding ascii
+
+      - name: Provision media tools and verify local speech
+        env:
+          EXE: ${{ matrix.exe }}
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $bundle = Resolve-Path 'dist/unpacked/watch-video'
+          $binary = Join-Path $bundle "bin/$env:EXE"
+          $setup = & $binary setup --mirror official | ConvertFrom-Json
+          if (-not $setup.ready -or $setup.video.status -ne 'verified' -or $setup.speech.status -ne 'verified' -or -not $setup.tools_dir) {
+              throw 'Fresh setup did not verify FFmpeg and local Whisper on the bundled video'
+          }
+          $setup | ConvertTo-Json -Depth 4
+          $setup.tools_dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          "WATCH_VIDEO_TEST_WHISPER_MODEL=$($setup.speech.model)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run Go tests
+        run: go test ./...
 
       - name: Exercise the packaged executable
         env:

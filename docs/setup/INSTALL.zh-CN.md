@@ -1,111 +1,95 @@
-# 安装 watch-video v0.3.1
+# 安装 watch-video v0.4.0
 
 [English](INSTALL.md) · [项目首页](../../README.zh-CN.md)
 
-在运行 Agent 的机器上安装发布包。压缩包含 CLI 和 `watch-video` Skill。CLI 可以独立使用，能转发图片的本地 stdio MCP 宿主也可以将它作为服务器运行。
+把发布压缩包交给能运行本地命令的 Agent，说 **「安装 Watch Video」**。只有项目地址时也可让 Agent 下载发布包。请在运行 Agent 的机器上执行安装。[发布包下载](https://github.com/secretpot/watch-video/releases/tag/v0.4.0)
 
-## 选择发布包并安装媒体工具
+## 默认安装流程
 
-| 宿主系统 | 发布文件 | FFmpeg 安装命令 |
-| --- | --- | --- |
-| Apple Silicon，macOS 15 或更高版本 | `watch-video-macos-arm64.tar.gz` | `brew install ffmpeg` |
-| Windows 11 x64 预览版 | `watch-video-windows-amd64-preview.zip` | `winget install --id Gyan.FFmpeg --exact --source winget` |
+| 宿主系统 | 发布包 |
+| --- | --- |
+| macOS 15+ Apple Silicon | `watch-video-macos-arm64.tar.gz` |
+| Windows 11 x64 预览版 | `watch-video-windows-amd64-preview.zip` |
 
-在 Apple Silicon Mac 上，`sysctl -n hw.optional.arm64` 返回 `1`。在 Windows 上，`[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture` 应返回 `X64`。`ffmpeg` 和 `ffprobe` 均需 8.0 或更高版本。安装工具后如果 `PATH` 已更新，请打开新终端。Windows 预览版已在 CI 中通过 Windows Server 2025 x64 验证，Windows 11 桌面验证尚未完成。
+Apple Silicon 上 `sysctl -n hw.optional.arm64` 返回 `1`。Windows 上 `[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture` 应返回 `X64`。Windows 发布包已在 Windows Server 2025 x64 上通过 CI，Windows 11 桌面仍待实测。
 
-若要处理公开视频链接，把官方的 `yt-dlp_macos` 或 `yt-dlp.exe` 放入 `PATH` 中的目录，并确保系统能够通过 `yt-dlp` 命令找到它。YouTube 可能还需要受支持的 JavaScript 运行时。 [yt-dlp 发布](https://github.com/yt-dlp/yt-dlp/releases/latest) · [YouTube 依赖](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
+1. 优先使用用户提供的发布包。如果未附 `.sha256`，从同一发布页下载对应校验文件。只有项目地址时，下载对应平台的包和校验文件。校验后解压，将整个 `watch-video` 目录安装到当前宿主的用户 Skill 目录。Codex 和 DeepSeek Harness 都支持 `~/.agents/skills`。已有宿主专用目录时沿用原路径，升级前先把旧包移出 Skill 的扫描目录。[Codex Skill 目录](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) · [Harness Skill 目录](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md)
+2. 用安装后的可执行文件运行 `setup`。它会准备 FFmpeg 和 ffprobe 8.0 或更高版本、whisper.cpp，以及多语言 Whisper Base q5_1 模型。macOS 使用 Homebrew，缺少 Homebrew 时按下文安装后重试。Windows 将所需程序和配套 DLL 装到当前用户的数据目录。
+3. 核对 `setup` 的 JSON 结果。必须同时看到 `"ready": true`、`video.status: "verified"` 和 `speech.status: "verified"`。该验证会在内置样片中解码一帧画面，并从无字幕音轨识别预期句子。按下文用返回的 `tools_dir` 配置 MCP，重载宿主后在新会话核对 `video_evidence`、`video_frame` 和 `video_captions` 可用。
 
-## 校验并安装发布包
+### 校验并解压发布包
 
-从同一个版本下载压缩包和配套的 `.sha256` 文件。在空目录中运行下面的命令。Codex 和 DeepSeek Harness 都能从默认的用户 Skill 目录 `~/.agents/skills` 发现安装好的 Skill。如果宿主使用其他 Skill 目录，请替换为该路径。 [v0.3.1 发布](https://github.com/secretpot/watch-video/releases/tag/v0.3.1) · [Codex Skill 目录](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) · [Harness Skill 目录](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md)
-
-升级时，检查用户和项目的 Skill 目录中是否已有 `watch-video`，包括旧版 Codex 设置中的 `~/.codex/skills` 和 Harness 的 `~/.dsh/skills`。运行安装命令前，把旧版移出宿主扫描的 Skill 目录。如果继续使用宿主专用的 Skill 目录，请安装到该目录，并将 MCP 配置指向其中的可执行文件。
+在存放发布包和校验文件的目录运行对应命令。请在空目录解压，避免混入旧版本文件。
 
 **macOS**
 
 ```sh
-asset=watch-video-macos-arm64.tar.gz
-release=https://github.com/secretpot/watch-video/releases/download/v0.3.1
-skills_dir="$HOME/.agents/skills"
+shasum -a 256 -c watch-video-macos-arm64.tar.gz.sha256 &&
+tar -xzf watch-video-macos-arm64.tar.gz
+```
 
-curl -fLO "$release/$asset" &&
-curl -fLO "$release/$asset.sha256" &&
-shasum -a 256 -c "$asset.sha256" &&
-test ! -e "$skills_dir/watch-video" &&
-tar -xzf "$asset" &&
-mkdir -p "$skills_dir" &&
-mv watch-video "$skills_dir/watch-video" &&
-"$skills_dir/watch-video/bin/watch-video" doctor
+把包放入当前 Skill 目录后，用安装路径运行。
+
+```sh
+"$HOME/.agents/skills/watch-video/bin/watch-video" setup
 ```
 
 **Windows PowerShell**
 
 ```powershell
 $asset = 'watch-video-windows-amd64-preview.zip'
-$release = 'https://github.com/secretpot/watch-video/releases/download/v0.3.1'
-$skillsDir = Join-Path $HOME '.agents\skills'
-$destination = Join-Path $skillsDir 'watch-video'
-
-Invoke-WebRequest "$release/$asset" -OutFile $asset -UseBasicParsing -ErrorAction Stop
-Invoke-WebRequest "$release/$asset.sha256" -OutFile "$asset.sha256" -UseBasicParsing -ErrorAction Stop
 $expected = ((Get-Content "$asset.sha256" -Raw) -split '\s+')[0]
 if ((Get-FileHash $asset -Algorithm SHA256).Hash -ne $expected) { throw 'SHA-256 mismatch' }
-if (Test-Path -LiteralPath $destination) { throw "An installation already exists at $destination" }
 Expand-Archive -LiteralPath $asset -DestinationPath . -ErrorAction Stop
-New-Item -ItemType Directory -Force -Path $skillsDir -ErrorAction Stop | Out-Null
-Move-Item -LiteralPath '.\watch-video' -Destination $destination -ErrorAction Stop
-& (Join-Path $destination 'bin\watch-video.exe') doctor
 ```
 
-`doctor` 应输出 `"ready": true`，并列出 `ffmpeg` 和 `ffprobe` 的路径与版本。如果 Agent 无法从当前环境找到媒体工具，用 `watch-video doctor --tools-dir DIR` 指定包含这两个可执行文件的目录绝对路径。下文配置 MCP 服务器参数时也用这一目录。
-
-如果 macOS Gatekeeper 或 Windows SmartScreen 拦截了下载的可执行文件，可以从对应版本标签的源代码构建。 [Gatekeeper](https://support.apple.com/en-us/102445) · [SmartScreen](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation) · [从源码构建](../development/README.zh-CN.md)
-
-## 可选的语音识别
-
-安装 `whisper-cli` 和多语言模型 `ggml-base-q5_1.bin`，即可为缺少可用字幕的视频生成转写。下列命令将模型放到各平台的默认位置。CLI 也支持用 `--whisper-model FILE` 选择其他模型，或者在 Windows 上的 Whisper 无法打开默认路径时指定只含 ASCII 字符的路径。 [模型下载](https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base-q5_1.bin)
-
-**macOS**
-
-```sh
-brew install whisper.cpp
-model_dir="$HOME/Library/Application Support/watch-video"
-mkdir -p "$model_dir"
-curl -fL 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin' \
-  -o "$model_dir/ggml-base-q5_1.bin"
-```
-
-**Windows PowerShell**
-
-把随包提供的 DLL 和 `whisper-cli.exe` 保存在同一个目录，并将该目录加入 `PATH`。 [Windows x64 可执行文件](https://github.com/ggml-org/whisper.cpp/releases/expanded_assets/b5454)
+把包放入当前 Skill 目录后，用安装路径运行。
 
 ```powershell
-$whisperDir = Join-Path $HOME 'whisper.cpp-b5454'
-Invoke-WebRequest 'https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip' `
-  -OutFile 'whisper-bin-x64.zip' -UseBasicParsing -ErrorAction Stop
-Expand-Archive -LiteralPath 'whisper-bin-x64.zip' -DestinationPath $whisperDir -ErrorAction Stop
-Get-ChildItem -LiteralPath $whisperDir -Recurse -File -Filter 'whisper-cli.exe'
-
-$modelDir = Join-Path $env:LOCALAPPDATA 'watch-video'
-New-Item -ItemType Directory -Force -Path $modelDir -ErrorAction Stop | Out-Null
-Invoke-WebRequest 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin' `
-  -OutFile (Join-Path $modelDir 'ggml-base-q5_1.bin') -UseBasicParsing -ErrorAction Stop
+& (Join-Path $HOME '.agents\skills\watch-video\bin\watch-video.exe') setup
 ```
+
+如果 macOS Gatekeeper 或 Windows SmartScreen 拦截了下载的程序，可以从发布标签构建。[Gatekeeper](https://support.apple.com/en-us/102445) · [SmartScreen](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation) · [从源码构建](../development/README.zh-CN.md)
+
+### 中国大陆下载与重试
+
+在中国大陆安装，或遇到上游访问失败时，用 `setup --mirror cn` 优先试区域镜像。默认 `setup` 先试上游，再试区域备用源。只想使用上游时，运行 `setup --mirror official`。
+
+- **macOS 工具**可用清华 TUNA 和中科大 USTC 的 Homebrew API 与二进制包镜像。镜像设置只用于安装命令。[清华 TUNA](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/) · [中科大 USTC](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html)
+- **Windows 工具**可从 FFmpeg 构建发布方 Gyan 的站点下载，也可经第三方 GitHub 发布文件代理获取固定版本。各源的压缩包均按上游固定的 SHA‑256 校验。[FFmpeg Windows 构建](https://ffmpeg.org/download.html#build-windows) · [Gyan 安装包](https://github.com/GyanD/codexffmpeg/releases/expanded_assets/9.0.2) · [Whisper CPU 安装包](https://github.com/ggml-org/whisper.cpp/releases/expanded_assets/b5454) · [GH-Proxy](https://gh-proxy.com/en/docs/github-accelerator/)
+- **Whisper 模型**固定使用 Hugging Face 的指定版本，区域备用源为公开、无需登录的 HF-Mirror。文件通过 SHA‑256 校验后才会启用。[上游模型](https://huggingface.co/ggerganov/whisper.cpp/blob/f281eb45af861ab5e5297d23694b7d46e090c02c/ggml-base-q5_1.bin) · [HF-Mirror](https://hf-mirror.com/)
+
+如果没有 Homebrew，按 [Homebrew 官方说明](https://brew.sh/)安装。在中国大陆可在临时目录运行下列清华镜像命令，再重试 `setup --mirror cn`。如系统请求密码或确认安装 Apple 命令行工具，请在系统窗口完成后继续。[清华 Homebrew 镜像说明](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew/)
+
+```sh
+git clone --depth=1 https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/install.git brew-install
+HOMEBREW_BREW_GIT_REMOTE=https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git \
+HOMEBREW_CORE_GIT_REMOTE=https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git \
+HOMEBREW_API_DOMAIN=https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api \
+HOMEBREW_BOTTLE_DOMAIN=https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles \
+/bin/bash brew-install/install.sh
+```
+
+下载或样片验证失败时，明确告诉用户 **本地转写尚未就绪**，注明失败的依赖，并给出带安装路径的重试命令。上游失败时重试 `setup --mirror cn`，只用上游时重试 `setup --mirror official`。已装好的发布包可保留。已有工具和本地模型时，用 `verify-install --tools-dir DIR --whisper-model FILE` 单独验证。MCP 使用默认模型路径，macOS 为 `~/Library/Application Support/watch-video/ggml-base-q5_1.bin`，Windows 为 `%LOCALAPPDATA%\watch-video\ggml-base-q5_1.bin`。 两个模型源都不可达时，可在其他网络下载同一个固定版本，复制到上述路径再运行 `setup` 校验和复用。
+
+Windows 上如果 Whisper 提示缺少运行库 DLL，安装微软签名的 Visual C++ v14 x64 运行库后，再运行 `setup`。系统可能要求管理员确认。如果 Whisper 无法打开非 ASCII 路径里的自定义模型，将该模型放到纯 ASCII 路径，再运行 `verify-install`。[微软运行库说明](https://learn.microsoft.com/zh-cn/cpp/windows/latest-supported-vc-redist) · [x64 安装程序](https://aka.ms/vc14/vc_redist.x64.exe) · [Whisper 路径问题](https://github.com/ggml-org/whisper.cpp/issues/4018)
+
+查看公开链接还需要单独安装官方 `yt-dlp`，并让 Agent 能从 `PATH` 找到它。YouTube 可能还需要兼容的 JavaScript 运行时。[yt-dlp 发布](https://github.com/yt-dlp/yt-dlp/releases/latest) · [YouTube 附加依赖](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
 
 ## 配置 MCP
 
-MCP 不可用时，Skill 仍可通过 CLI 工作。要在兼容的宿主上启用 MCP，使用已安装的可执行文件绝对路径作为命令，第一项参数填 `mcp`。如果宿主找不到 FFmpeg，而媒体工具装在 Apple Silicon 上 Homebrew 的默认目录，可将 `args` 设为 `['mcp', '--tools-dir', '/opt/homebrew/bin']`。工具装在其他位置时，请替换为实际目录。
+把已安装的可执行文件绝对路径设为本地 stdio 命令，依次传入 `mcp`、`--tools-dir` 和 `setup` 返回的绝对 `tools_dir`。即使桌面宿主采用不同的 `PATH`，也能找到同一套工具。宿主不支持 MCP 时，请在 CLI 命令中使用相同的 `--tools-dir`。
 
 缓存位置和保留期限见[公开录播缓存](../usage/README.zh-CN.md#公开录播缓存)。
 
 ### Codex
 
-将下列 TOML 配置表加入 `~/.codex/config.toml`，或加入已配置的 `CODEX_HOME` 下的 `config.toml`。如果已有 `watch_video` 配置，请更新现有条目。把示例命令替换成已安装的可执行文件绝对路径。Windows 上可以使用 TOML 字面量字符串 `'C:\Users\you\.agents\skills\watch-video\bin\watch-video.exe'`。 [Codex MCP 配置](https://learn.chatgpt.com/docs/extend/mcp?surface=cli#configure-with-config-toml)
+将下列 TOML 配置表加入 `~/.codex/config.toml`，或加入已配置的 `CODEX_HOME` 下的 `config.toml`。如果已有 `watch_video` 配置，请更新现有条目。将示例中的两处绝对路径换成已安装的可执行文件和工具目录。Windows 上可以使用 TOML 字面量字符串 `'C:\Users\you\.agents\skills\watch-video\bin\watch-video.exe'`。 [Codex MCP 配置](https://learn.chatgpt.com/docs/extend/mcp?surface=cli#configure-with-config-toml)
 
 ```toml
 [mcp_servers.watch_video]
 command = '/Users/you/.agents/skills/watch-video/bin/watch-video'
-args = ['mcp']
+args = ['mcp', '--tools-dir', '/opt/homebrew/bin']
 tool_timeout_sec = 300
 ```
 
@@ -113,7 +97,7 @@ tool_timeout_sec = 300
 
 ### DeepSeek Harness
 
-将下列 YAML 列表项加入 `~/.dsh/profiles/desktop/cordis.patch.yml` 的顶层。使用当前启用的配置档，如果设置了 `DSH_HOME`，请使用对应目录。保留其他条目，已有该服务器时直接更新对应条目。把示例命令替换成已安装的可执行文件绝对路径。Windows 上可以使用 YAML 字面量字符串 `'C:\Users\you\.agents\skills\watch-video\bin\watch-video.exe'`。使用支持视觉输入的模型，并启用附件。 [Harness MCP 配置](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md)
+将下列 YAML 列表项加入 `~/.dsh/profiles/desktop/cordis.patch.yml` 的顶层。使用当前启用的配置档，如果设置了 `DSH_HOME`，请使用对应目录。保留其他条目，已有该服务器时直接更新对应条目。将示例中的两处绝对路径换成已安装的可执行文件和工具目录。Windows 上可以使用 YAML 字面量字符串 `'C:\Users\you\.agents\skills\watch-video\bin\watch-video.exe'`。使用支持视觉输入的模型，并启用附件。 [Harness MCP 配置](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md)
 
 ```yaml
 - insert:
@@ -123,14 +107,12 @@ tool_timeout_sec = 300
         serverName: watch_video
         transport: stdio
         command: '/Users/you/.agents/skills/watch-video/bin/watch-video'
-        args: ['mcp']
+        args: ['mcp', '--tools-dir', '/opt/homebrew/bin']
         toolCallTimeoutMs: 300000
 ```
 
 配置档重新加载后，打开新会话，从 `/` 菜单中显式选择 `watch-video`。 [Harness Skill 选择器](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-skill/README.md#use-this-package)
 
-## 用视频验证安装
+## 验证 Agent
 
-用已安装的可执行文件运行 `watch-video evidence "path/to/clip.mp4" --no-asr --out watch-video-check`，确保输出路径尚未使用。返回的 JSON 应包含分镜 JPEG 的路径。
-
-在新的 Agent 会话中发送 `@watch-video <video_url>`，也可以把链接换成本地视频路径。收到带时间戳的概览后，在同一会话里追问，例如“00:01 时画面里有什么？给出画面的时间戳。”启用 MCP 时，宿主应显示概览调用 `video_evidence`，定位画面的追问调用 `video_frame`。如果概览返回了字幕引用，可用 `video_captions` 查询字幕。
+在新会话发 `@watch-video <视频链接>`，也可以换成本地视频路径。概览应调用 `video_evidence`。收到概览后，在同一会话问某个时间点的画面可验证 `video_frame`，追问一段台词可验证 `video_captions`。

@@ -161,19 +161,27 @@ func evidenceCueData(ctx context.Context, tools toolset, info mediaInfo, start, 
 	return captions, "no_cues", err
 }
 
-func evidenceModel(tools toolset, model string) (string, string, error) {
-	if model != "" {
-		return model, "", nil
-	}
+func defaultWhisperModelPath() (string, error) {
 	configDir := os.UserConfigDir
 	if runtime.GOOS == "windows" {
 		configDir = os.UserCacheDir
 	}
 	dir, err := configDir()
 	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "watch-video", "ggml-base-q5_1.bin"), nil
+}
+
+func evidenceModel(tools toolset, model string) (string, string, error) {
+	if model != "" {
+		return model, "", nil
+	}
+	path, err := defaultWhisperModelPath()
+	if err != nil {
 		return "", "model_missing", nil
 	}
-	model, err = regularFile(filepath.Join(dir, "watch-video", "ggml-base-q5_1.bin"))
+	model, err = regularFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return "", "model_missing", nil
 	}

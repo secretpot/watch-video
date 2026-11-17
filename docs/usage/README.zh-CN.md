@@ -13,6 +13,8 @@
 将下列命令中的 `watch-video` 替换为可执行文件的路径，或把它所在的 `bin` 目录加入 `PATH`。给 `--out` 指定一个尚不存在的目录，CLI 会创建它。目录的上一级路径须已存在。
 
 ```text
+watch-video setup
+watch-video verify-install
 watch-video evidence "clip.mp4" --out evidence
 watch-video focus "clip.mp4" --at 00:16 --out detail
 watch-video probe "clip.mp4"

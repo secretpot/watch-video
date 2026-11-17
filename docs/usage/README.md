@@ -13,6 +13,8 @@ When a host passes `@watch-video` as text, the agent can select the installed Sk
 Use the executable path in place of `watch-video` below, or add its `bin` folder to `PATH`. Pass an unused path inside an existing parent directory to `--out` and let the CLI create it.
 
 ```text
+watch-video setup
+watch-video verify-install
 watch-video evidence "clip.mp4" --out evidence
 watch-video focus "clip.mp4" --at 00:16 --out detail
 watch-video probe "clip.mp4"

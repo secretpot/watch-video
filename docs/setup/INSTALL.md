@@ -1,111 +1,95 @@
-# Install watch-video v0.3.1
+# Install watch-video v0.4.0
 
 [简体中文](INSTALL.zh-CN.md) · [Project home](../../README.md)
 
-Install the release on the machine that runs the agent. The archive includes the CLI and the `watch-video` Skill. The CLI also works on its own, and any local stdio MCP host that forwards images can use it as a server.
+Give the release archive to an agent with local shell access and say **“Install Watch Video.”** The agent can also start from the project URL. Install on the machine where the agent runs. [Release downloads](https://github.com/secretpot/watch-video/releases/tag/v0.4.0)
 
-## Choose a package and install media tools
+## Default installation
 
-| Host OS | Release asset | Required FFmpeg tools |
-| --- | --- | --- |
-| macOS 15+ on Apple Silicon | `watch-video-macos-arm64.tar.gz` | `brew install ffmpeg` |
-| Windows 11 x64 preview | `watch-video-windows-amd64-preview.zip` | `winget install --id Gyan.FFmpeg --exact --source winget` |
+| Host OS | Release archive |
+| --- | --- |
+| macOS 15+ on Apple Silicon | `watch-video-macos-arm64.tar.gz` |
+| Windows 11 x64 preview | `watch-video-windows-amd64-preview.zip` |
 
-On macOS, `sysctl -n hw.optional.arm64` returns `1` on Apple Silicon. On Windows, `[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture` should report `X64`. Both `ffmpeg` and `ffprobe` must be version 8.0 or later. Open a new terminal after installing tools if `PATH` changed. The Windows preview is exercised on Windows Server 2025 x64 in CI. Windows 11 desktop testing is pending.
+On Apple Silicon, `sysctl -n hw.optional.arm64` returns `1`. On Windows, `[System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture` should report `X64`. The Windows archive is tested on Windows Server 2025 x64 in CI. Windows 11 desktop testing is pending.
 
-For public recording URLs, put the official `yt-dlp_macos` or `yt-dlp.exe` on `PATH` under the command name `yt-dlp`. YouTube can require a supported JavaScript runtime. [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases/latest) · [YouTube dependencies](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
+1. Use the archive the user supplied. Get its matching `.sha256` from the same release if it was omitted. With only the project URL, download both files. Verify the checksum and extract the archive. Install the whole `watch-video` directory in the active host’s user Skill location. Both Codex and DeepSeek Harness support `~/.agents/skills`. Reuse an existing host-specific Skill location if the host already has one. For an upgrade, move the old bundle outside scanned Skill directories first. [Codex Skill directories](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) · [Harness Skill directories](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md)
+2. Run the installed executable with `setup`. It prepares FFmpeg and ffprobe 8.0 or later, whisper.cpp, and the multilingual Whisper Base q5_1 model. On macOS it uses Homebrew. If Homebrew is missing, follow the bootstrap steps below, then rerun `setup`. On Windows it installs the required executables and adjacent DLLs in the current user’s data directory.
+3. Check the `setup` result. The last JSON report must show `"ready": true`, `video.status: "verified"`, and `speech.status: "verified"`. The check decodes a frame and recognizes a fixed sentence from the bundled video, which contains audio and no subtitles. Use the reported `tools_dir` when configuring MCP below. Reload the host configuration and check that `video_evidence`, `video_frame` and `video_captions` are available in a new session.
 
-## Verify and install the release
+### Verify and extract the archive
 
-Use the archive and its matching `.sha256` from the same release. Run the commands in an empty working directory. Codex and DeepSeek Harness can both discover the installed bundle in the default user skill directory, `~/.agents/skills`. If your host uses a different skills directory, substitute that path. [v0.3.1 release](https://github.com/secretpot/watch-video/releases/tag/v0.3.1) · [Codex skill directories](https://learn.chatgpt.com/docs/build-skills#where-codex-loads-local-skills) · [Harness skill directories](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/skill/skill-filesystem/README.md)
-
-For an upgrade, check for an existing `watch-video` in user and project skill directories, including `~/.codex/skills` on older Codex setups and `~/.dsh/skills` in Harness. Move the prior bundle out of scanned skill directories before running the install commands. If you keep a host-specific skill directory, use it for the destination and point the MCP entry at that binary.
+Run the matching command in the directory containing both downloaded files. Use an empty extraction directory to avoid mixing releases.
 
 **macOS**
 
 ```sh
-asset=watch-video-macos-arm64.tar.gz
-release=https://github.com/secretpot/watch-video/releases/download/v0.3.1
-skills_dir="$HOME/.agents/skills"
+shasum -a 256 -c watch-video-macos-arm64.tar.gz.sha256 &&
+tar -xzf watch-video-macos-arm64.tar.gz
+```
 
-curl -fLO "$release/$asset" &&
-curl -fLO "$release/$asset.sha256" &&
-shasum -a 256 -c "$asset.sha256" &&
-test ! -e "$skills_dir/watch-video" &&
-tar -xzf "$asset" &&
-mkdir -p "$skills_dir" &&
-mv watch-video "$skills_dir/watch-video" &&
-"$skills_dir/watch-video/bin/watch-video" doctor
+Once the bundle is in the active Skill directory, run its executable.
+
+```sh
+"$HOME/.agents/skills/watch-video/bin/watch-video" setup
 ```
 
 **Windows PowerShell**
 
 ```powershell
 $asset = 'watch-video-windows-amd64-preview.zip'
-$release = 'https://github.com/secretpot/watch-video/releases/download/v0.3.1'
-$skillsDir = Join-Path $HOME '.agents\skills'
-$destination = Join-Path $skillsDir 'watch-video'
-
-Invoke-WebRequest "$release/$asset" -OutFile $asset -UseBasicParsing -ErrorAction Stop
-Invoke-WebRequest "$release/$asset.sha256" -OutFile "$asset.sha256" -UseBasicParsing -ErrorAction Stop
 $expected = ((Get-Content "$asset.sha256" -Raw) -split '\s+')[0]
 if ((Get-FileHash $asset -Algorithm SHA256).Hash -ne $expected) { throw 'SHA-256 mismatch' }
-if (Test-Path -LiteralPath $destination) { throw "An installation already exists at $destination" }
 Expand-Archive -LiteralPath $asset -DestinationPath . -ErrorAction Stop
-New-Item -ItemType Directory -Force -Path $skillsDir -ErrorAction Stop | Out-Null
-Move-Item -LiteralPath '.\watch-video' -Destination $destination -ErrorAction Stop
-& (Join-Path $destination 'bin\watch-video.exe') doctor
 ```
 
-`doctor` should report `"ready": true` and paths and versions for `ffmpeg` and `ffprobe`. If the agent cannot find installed tools through its environment, run `watch-video doctor --tools-dir DIR` with the absolute directory containing the media executables. Use that same directory in the server arguments below.
-
-If macOS Gatekeeper or Windows SmartScreen flags the downloaded executable, you can build it from the tagged source. [Gatekeeper](https://support.apple.com/en-us/102445) · [SmartScreen](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation) · [Source build](../development/README.md)
-
-## Optional speech recognition
-
-Install `whisper-cli` and the multilingual `ggml-base-q5_1.bin` model to transcribe videos that have no usable subtitles. The commands below place the model at the default location for each OS. The CLI also accepts `--whisper-model FILE` to select another model or an ASCII-only path if Windows Whisper cannot open the default path. [Model download](https://huggingface.co/ggerganov/whisper.cpp/blob/main/ggml-base-q5_1.bin)
-
-**macOS**
-
-```sh
-brew install whisper.cpp
-model_dir="$HOME/Library/Application Support/watch-video"
-mkdir -p "$model_dir"
-curl -fL 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin' \
-  -o "$model_dir/ggml-base-q5_1.bin"
-```
-
-**Windows PowerShell**
-
-Keep the supplied DLLs next to `whisper-cli.exe` and add its directory to your `PATH`. [Windows x64 binaries](https://github.com/ggml-org/whisper.cpp/releases/expanded_assets/b5454)
+Once the bundle is in the active Skill directory, run its executable.
 
 ```powershell
-$whisperDir = Join-Path $HOME 'whisper.cpp-b5454'
-Invoke-WebRequest 'https://github.com/ggml-org/whisper.cpp/releases/download/b5454/whisper-bin-x64.zip' `
-  -OutFile 'whisper-bin-x64.zip' -UseBasicParsing -ErrorAction Stop
-Expand-Archive -LiteralPath 'whisper-bin-x64.zip' -DestinationPath $whisperDir -ErrorAction Stop
-Get-ChildItem -LiteralPath $whisperDir -Recurse -File -Filter 'whisper-cli.exe'
-
-$modelDir = Join-Path $env:LOCALAPPDATA 'watch-video'
-New-Item -ItemType Directory -Force -Path $modelDir -ErrorAction Stop | Out-Null
-Invoke-WebRequest 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base-q5_1.bin' `
-  -OutFile (Join-Path $modelDir 'ggml-base-q5_1.bin') -UseBasicParsing -ErrorAction Stop
+& (Join-Path $HOME '.agents\skills\watch-video\bin\watch-video.exe') setup
 ```
+
+If macOS Gatekeeper or Windows SmartScreen flags the downloaded executable, you can build from the release tag. [Gatekeeper](https://support.apple.com/en-us/102445) · [SmartScreen](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation) · [Source build](../development/README.md)
+
+### Mainland China downloads and retries
+
+Run `setup --mirror cn` when installing in mainland China or after an upstream connection failure. The default `setup` tries upstreams first, then regional fallbacks. `setup --mirror official` restricts setup to upstream routes.
+
+- **macOS tools** use the TUNA and USTC Homebrew API and bottle mirrors on the regional route. The installer uses these settings for the install command. [TUNA](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew-bottles/) · [USTC](https://mirrors.ustc.edu.cn/help/homebrew-bottles.html)
+- **Windows tools** can use the Gyan publisher’s own server for FFmpeg and a GitHub release proxy for the pinned archives if the primary route fails. The GitHub proxy is a third party. The same pinned upstream SHA-256 applies to every route. [FFmpeg Windows builds](https://ffmpeg.org/download.html#build-windows) · [Gyan archives](https://github.com/GyanD/codexffmpeg/releases/expanded_assets/9.0.2) · [Whisper CPU archive](https://github.com/ggml-org/whisper.cpp/releases/expanded_assets/b5454) · [GH-Proxy](https://gh-proxy.com/en/docs/github-accelerator/)
+- **The model** uses a pinned Hugging Face revision, with the public, unauthenticated HF-Mirror as a regional route. The downloader verifies SHA‑256 before accepting the file. [Upstream model](https://huggingface.co/ggerganov/whisper.cpp/blob/f281eb45af861ab5e5297d23694b7d46e090c02c/ggml-base-q5_1.bin) · [HF-Mirror](https://hf-mirror.com/)
+
+If Homebrew is missing, use the [Homebrew installer](https://brew.sh/). In mainland China, follow the TUNA bootstrap in a temporary working directory, then retry `setup --mirror cn`. If Apple requests a password or Command Line Tools confirmation, complete that native prompt and resume. [TUNA Homebrew bootstrap](https://mirrors.tuna.tsinghua.edu.cn/help/homebrew/)
+
+```sh
+git clone --depth=1 https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/install.git brew-install
+HOMEBREW_BREW_GIT_REMOTE=https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/brew.git \
+HOMEBREW_CORE_GIT_REMOTE=https://mirrors.tuna.tsinghua.edu.cn/git/homebrew/homebrew-core.git \
+HOMEBREW_API_DOMAIN=https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles/api \
+HOMEBREW_BOTTLE_DOMAIN=https://mirrors.tuna.tsinghua.edu.cn/homebrew-bottles \
+/bin/bash brew-install/install.sh
+```
+
+If a download or the sample check fails, tell the user **local transcription is not ready**, identify the failing component, and give the retry command with the installed executable. Retry `setup --mirror cn` after a failed upstream download or `setup --mirror official` to avoid mirrors. The bundle can stay installed while you retry. If you already have the tools and a local model, run `verify-install --tools-dir DIR --whisper-model FILE` to test them directly. MCP uses the default model at `~/Library/Application Support/watch-video/ggml-base-q5_1.bin` on macOS and `%LOCALAPPDATA%\watch-video\ggml-base-q5_1.bin` on Windows. If both model sources are unreachable, fetch the same pinned file on another network, copy it to that path, and rerun `setup` to verify and reuse it.
+
+On Windows, if Whisper reports a missing runtime DLL, install the Microsoft-signed Visual C++ v14 x64 Redistributable, then rerun `setup`. The installer can request elevation. If you are testing a custom model that Whisper cannot open from a path containing non-ASCII characters, retry `verify-install` with an ASCII-only path to that file. [Microsoft runtime instructions](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) · [x64 installer](https://aka.ms/vc14/vc_redist.x64.exe) · [Whisper path handling](https://github.com/ggml-org/whisper.cpp/issues/4018)
+
+For public URLs, install the official `yt-dlp` separately and make its command available on the agent’s `PATH`. YouTube can require a supported JavaScript runtime. [yt-dlp releases](https://github.com/yt-dlp/yt-dlp/releases/latest) · [YouTube dependencies](https://github.com/yt-dlp/yt-dlp/wiki/EJS)
 
 ## Configure MCP
 
-The Skill works through the CLI when MCP is unavailable. To enable MCP in any compatible host, use the absolute installed executable path as the command and `mcp` as its first argument. If the host cannot find FFmpeg, set `args` to `['mcp', '--tools-dir', '/opt/homebrew/bin']` for a default Apple Silicon Homebrew installation, or substitute the actual media tool directory.
+Use the absolute installed executable path as the local stdio command. Pass `mcp`, `--tools-dir` and the absolute `tools_dir` reported by `setup` as three separate arguments. This lets the desktop host find the same tools even with a different `PATH`. On hosts without MCP, use the same `--tools-dir` in CLI commands.
 
 For cache locations and retention, see [Public recording cache](../usage/README.md#public-recording-cache).
 
 ### Codex
 
-Add this table to `~/.codex/config.toml` (or the `config.toml` in your configured `CODEX_HOME`). Update the existing table if `watch_video` is already configured. Replace the example command with your absolute installed executable path. For example, a Windows TOML literal is `'C:\Users\you\.agents\skills\watch-video\bin\watch-video.exe'`. [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli#configure-with-config-toml)
+Add this table to `~/.codex/config.toml` (or the `config.toml` in your configured `CODEX_HOME`). Update the existing table if `watch_video` is already configured. Replace both example paths with your installed executable and the reported tools directory. For example, a Windows TOML literal is `'C:\Users\you\.agents\skills\watch-video\bin\watch-video.exe'`. [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli#configure-with-config-toml)
 
 ```toml
 [mcp_servers.watch_video]
 command = '/Users/you/.agents/skills/watch-video/bin/watch-video'
-args = ['mcp']
+args = ['mcp', '--tools-dir', '/opt/homebrew/bin']
 tool_timeout_sec = 300
 ```
 
@@ -113,7 +97,7 @@ Use `codex mcp list` to check the configuration or `/mcp` in the Codex terminal 
 
 ### DeepSeek Harness
 
-Add this top-level list item to `~/.dsh/profiles/desktop/cordis.patch.yml`. Use the active profile and the `DSH_HOME` directory if configured. Keep existing entries and update the existing server row if present. Replace the example command with your absolute installed executable path. A Windows YAML literal is `'C:\Users\you\.agents\skills\watch-video\bin\watch-video.exe'`. Use a vision-enabled model with attachments enabled. [Harness MCP configuration](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md)
+Add this top-level list item to `~/.dsh/profiles/desktop/cordis.patch.yml`. Use the active profile and the `DSH_HOME` directory if configured. Keep existing entries and update the existing server row if present. Replace both example paths with your installed executable and the reported tools directory. A Windows YAML literal is `'C:\Users\you\.agents\skills\watch-video\bin\watch-video.exe'`. Use a vision-enabled model with attachments enabled. [Harness MCP configuration](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/mcp/mcp-client/README.md)
 
 ```yaml
 - insert:
@@ -123,14 +107,12 @@ Add this top-level list item to `~/.dsh/profiles/desktop/cordis.patch.yml`. Use 
         serverName: watch_video
         transport: stdio
         command: '/Users/you/.agents/skills/watch-video/bin/watch-video'
-        args: ['mcp']
+        args: ['mcp', '--tools-dir', '/opt/homebrew/bin']
         toolCallTimeoutMs: 300000
 ```
 
 Start a new session after the profile reloads. Use the `/` menu to select `watch-video` explicitly. [Harness skill selector](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/client/ui-skill/README.md#use-this-package)
 
-## Check a video
+## Check the agent
 
-Run `watch-video evidence "path/to/clip.mp4" --no-asr --out watch-video-check` with the installed executable and an unused output path. The JSON should point to a storyboard JPEG.
-
-In a new agent session, send `@watch-video <video_url>` or replace the URL with a local video path. After the timestamped overview, send a follow-up in the same chat, such as `What is visible at 00:01? Give the frame timestamp.` With MCP enabled, the host should show `video_evidence` for the overview and `video_frame` for the timed visual follow-up. Use `video_captions` when the overview returns a caption reference.
+In a new agent session, send `@watch-video <video_url>`, or use a local video path. The overview should use `video_evidence`. In the same chat, ask what is visible at a particular timestamp to check `video_frame`, or ask for a line of dialogue to check `video_captions`.

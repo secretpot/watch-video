@@ -22,6 +22,8 @@ import (
 const usage = `Usage: watch-video <command> [options] [input]
 
   doctor                                 Check media dependencies
+  setup                                  Install dependencies and check local speech recognition
+  verify-install                         Decode a sample and verify local speech recognition
   probe INPUT                            Inspect a local video
   fetch URL --out NEWDIR                 Download one public recorded video
   evidence INPUT --out NEWDIR            Prepare one storyboard and timestamped captions
@@ -60,11 +62,16 @@ func (tools toolset) path(name string) (string, error) {
 }
 
 func (tools toolset) run(ctx context.Context, name string, args ...string) ([]byte, []byte, error) {
+	return tools.runIn(ctx, "", name, args...)
+}
+
+func (tools toolset) runIn(ctx context.Context, dir, name string, args ...string) ([]byte, []byte, error) {
 	path, err := tools.path(name)
 	if err != nil {
 		return nil, nil, err
 	}
 	cmd := exec.CommandContext(ctx, path, args...)
+	cmd.Dir = dir
 	cmd.WaitDelay = 2 * time.Second
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -220,6 +227,9 @@ func runWithCache(ctx context.Context, args []string, stdout io.Writer, cache *p
 		_, err := fmt.Fprintln(stdout, usage)
 		return err
 	}
+	if command == "setup" {
+		return runSetup(ctx, args[1:], stdout, os.Stderr)
+	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	toolsDir := flags.String("tools-dir", "", "directory containing media tools, searched before PATH")
@@ -227,7 +237,7 @@ func runWithCache(ctx context.Context, args []string, stdout io.Writer, cache *p
 	var frames int
 	var batch, noASR bool
 	switch command {
-	case "doctor", "probe":
+	case "doctor", "verify-install", "probe":
 	case "fetch", "evidence", "overview", "focus", "captions":
 		flags.StringVar(&out, "out", "", "new output directory with an existing parent")
 	default:
@@ -246,6 +256,8 @@ func runWithCache(ctx context.Context, args []string, stdout io.Writer, cache *p
 		flags.StringVar(&subtitleLanguage, "subtitle-lang", "", "one exact platform subtitle language tag")
 	}
 	switch command {
+	case "verify-install":
+		flags.StringVar(&model, "whisper-model", "", "local whisper.cpp model (defaults to the evidence model)")
 	case "captions", "evidence":
 		flags.StringVar(&subtitle, "subtitle", "", "SRT or VTT file on the source timeline")
 		flags.StringVar(&model, "whisper-model", "", "local whisper.cpp model (enables fallback transcription)")
@@ -264,7 +276,7 @@ func runWithCache(ctx context.Context, args []string, stdout io.Writer, cache *p
 		switch command {
 		case "fetch":
 			fmt.Fprintln(stdout, " URL")
-		case "doctor":
+		case "doctor", "verify-install":
 			fmt.Fprintln(stdout)
 		default:
 			fmt.Fprintln(stdout, " INPUT")
@@ -289,9 +301,12 @@ func runWithCache(ctx context.Context, args []string, stdout io.Writer, cache *p
 			return fmt.Errorf("--tools-dir %q is not a directory", *toolsDir)
 		}
 	}
-	if command == "doctor" {
+	if command == "doctor" || command == "verify-install" {
 		if len(positionals) != 0 {
-			return errors.New("doctor takes no input")
+			return fmt.Errorf("%s takes no input", command)
+		}
+		if command == "verify-install" {
+			return verifyInstall(ctx, tools, stdout, model)
 		}
 		return doctor(ctx, tools, stdout)
 	}

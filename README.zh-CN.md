@@ -6,10 +6,10 @@ Watch Video 为能看图的 Agent 提供带时间码的分镜图和可用字幕�
 
 ## 安装
 
-[安装指南](docs/setup/INSTALL.zh-CN.md)覆盖 macOS 15+ Apple Silicon、Windows 11 x64 预览版、媒体工具及可选的 MCP 配置。也可以把下面这句发给 Agent，让它完成安装和验证。
+把发布压缩包交给 Agent，说「安装 Watch Video」即可。默认流程会安装 FFmpeg、Whisper 和本地模型，再用内置的无字幕样片验证转写。还没下载发布包时，可以把项目地址一起发给 Agent。[安装指南](docs/setup/INSTALL.zh-CN.md)
 
 ```text
-在这个 Agent 中安装并验证 Watch Video。https://github.com/secretpot/watch-video
+安装 Watch Video。https://github.com/secretpot/watch-video
 ```
 
 ## 在 Agent 中使用

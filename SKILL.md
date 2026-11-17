@@ -1,10 +1,12 @@
 ---
 name: watch-video
-description: "Understand a local video or public recording with timestamped evidence. Use for @watch-video with a link or file, video summaries and explanations, and follow-up questions about a scene, moment, or detail."
+description: "Install Watch Video or understand a local video or public recording with timestamped evidence. Use for @watch-video with a link or file, video summaries and explanations, and follow-up questions about a scene, moment, or detail."
 license: MIT
 ---
 
 # Watch video
+
+For an installation request, follow the release bundle's [installation guide](docs/setup/INSTALL.md). Run `setup` to prepare FFmpeg and local Whisper and verify an unsubtitled clip. Report local transcription as ready after the verification succeeds. If it fails, report the failing dependency and the retry command from the guide.
 
 Use the video and question from the request or conversation.
 
@@ -16,7 +18,7 @@ Use the video and question from the request or conversation.
 
 ## Shell fallback
 
-Run the absolute path to `bin/watch-video` (`bin/watch-video.exe` on Windows) from the user's working directory. Give `--out` an unused child path and let the CLI create it. Resolve returned artifact paths relative to that directory.
+Run the absolute path to `bin/watch-video` (`bin/watch-video.exe` on Windows) from the user's working directory. If the media tools are outside the host's PATH, pass the directory reported by `setup` via `--tools-dir`. Give `--out` an unused child path and let the CLI create it. Resolve returned artifact paths relative to that directory.
 
 - **Overview.** Run `evidence INPUT --out DIR`. Add `--no-asr` for visual tasks or `--subtitle-lang CODE` when the public site's subtitle tag is known. Allow time for local speech recognition in the same invocation. Use stdout as the index and open the listed image and compact caption text once, in parallel if possible. Read [setup](README.md#install) if the command reports a missing dependency.
 - **Detail.** Reuse the returned `video` path. For a known moment start with `focus VIDEO --at 00:16 --out DIR`, using the time as written. If the image leaves a specific uncertainty, use `focus VIDEO --start TIME --end TIME --frames N --out DIR` with the fewest frames that resolve it. Use the cue index for exact dialogue in a narrow interval.
