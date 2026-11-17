@@ -1,8 +1,8 @@
-# 安装 watch-video v0.4.0
+# 安装 watch-video v0.4.1
 
 [English](INSTALL.md) · [项目首页](../../README.zh-CN.md)
 
-把发布压缩包交给能运行本地命令的 Agent，说 **「安装 Watch Video」**。只有项目地址时也可让 Agent 下载发布包。请在运行 Agent 的机器上执行安装。[发布包下载](https://github.com/secretpot/watch-video/releases/tag/v0.4.0)
+把发布压缩包交给能运行本地命令的 Agent，说 **「安装 Watch Video」**。只有项目地址时也可让 Agent 下载发布包。请在运行 Agent 的机器上执行安装。[发布包下载](https://github.com/secretpot/watch-video/releases/tag/v0.4.1)
 
 ## 默认安装流程
 
@@ -116,3 +116,32 @@ tool_timeout_sec = 300
 ## 验证 Agent
 
 在新会话发 `@watch-video <视频链接>`，也可以换成本地视频路径。概览应调用 `video_evidence`。收到概览后，在同一会话问某个时间点的画面可验证 `video_frame`，追问一段台词可验证 `video_captions`。
+
+## 卸载
+
+先移除 MCP 注册并重启宿主，让原先运行的 Watch Video 服务退出。再移除已安装的 `watch-video` Skill 目录，目录里的 `bin/` 也包含 MCP 可执行文件。如果多个宿主共用同一个 Skill 目录，等最后一个宿主停用后再移除这份安装。
+
+### Codex
+
+运行 `codex mcp remove watch_video`，再用 `codex mcp list` 核对。手动编辑时，从生效的 `config.toml` 删除 `[mcp_servers.watch_video]` 及其所有子表，包括工具级设置。默认配置是 `~/.codex/config.toml`。如设置了 `CODEX_HOME`，以其中的配置为准。
+
+移除已安装的 Skill 目录 `~/.agents/skills/watch-video`。如果装在 Codex 专用目录，则移除 `~/.codex/skills/watch-video`。其他安装位置以实际路径为准。
+
+### DeepSeek Harness
+
+从 `~/.dsh/profiles/desktop/cordis.patch.yml` 删除带有 `id: watch-video-mcp` 和 `serverName: watch_video` 的条目。检查曾启用它的其他配置档，例如 `headless`。如设置了 `DSH_HOME`，以其中的配置为准。如果该条目是对应 `insert:` 块里的唯一一项，可一并删除空块。
+
+移除已安装的 Skill 目录 `~/.agents/skills/watch-video`。如果装在 Harness 专用目录，则移除 `~/.dsh/skills/watch-video`。其他安装位置以实际路径为准。
+
+### 其他 Agent 宿主
+
+查看宿主生效的 MCP 配置，找到 `command` 指向 Watch Video 可执行文件且带有 `mcp` 参数的注册条目。确认它属于哪个配置档，以及宿主从哪里读取 `watch-video/SKILL.md`。按宿主的配置方式移除注册，等该 Skill 目录无人共用时，再移除安装目录。
+
+### 清理共享模型和缓存
+
+Codex、DeepSeek Harness 和其他使用这份安装的宿主都停用 Watch Video 后，可以清理共享数据。
+
+- **macOS**。在访达用「前往文件夹」打开 `~/Library/Application Support/watch-video` 和 `~/Library/Caches/watch-video`，分别对应下载的 Whisper 模型和录播缓存。将这两个目录移入废纸篓。
+- **Windows**。在文件资源管理器中打开 `%LOCALAPPDATA%\watch-video`，将目录移入回收站。该目录包含下载的模型、缓存和 Watch Video 安装的媒体工具。
+
+如果设置了 `--cache-dir`，也检查该位置的 Watch Video 缓存。其他软件还在使用的 Homebrew 或单独安装的媒体工具可继续保留。

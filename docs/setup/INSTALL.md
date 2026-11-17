@@ -1,8 +1,8 @@
-# Install watch-video v0.4.0
+# Install watch-video v0.4.1
 
 [简体中文](INSTALL.zh-CN.md) · [Project home](../../README.md)
 
-Give the release archive to an agent with local shell access and say **“Install Watch Video.”** The agent can also start from the project URL. Install on the machine where the agent runs. [Release downloads](https://github.com/secretpot/watch-video/releases/tag/v0.4.0)
+Give the release archive to an agent with local shell access and say **“Install Watch Video.”** The agent can also start from the project URL. Install on the machine where the agent runs. [Release downloads](https://github.com/secretpot/watch-video/releases/tag/v0.4.1)
 
 ## Default installation
 
@@ -116,3 +116,32 @@ Start a new session after the profile reloads. Use the `/` menu to select `watch
 ## Check the agent
 
 In a new agent session, send `@watch-video <video_url>`, or use a local video path. The overview should use `video_evidence`. In the same chat, ask what is visible at a particular timestamp to check `video_frame`, or ask for a line of dialogue to check `video_captions`.
+
+## Uninstall
+
+Remove the MCP registration and restart the host so its running Watch Video server exits. Then remove the installed `watch-video` Skill directory, which also contains the executable under `bin/`. If another host still uses the same Skill directory, keep that shared copy until the last host has stopped using it.
+
+### Codex
+
+Run `codex mcp remove watch_video`, then check `codex mcp list`. If editing the configuration directly, remove `[mcp_servers.watch_video]` and any tables below it, including its per-tool settings, from the active `config.toml`. The default is `~/.codex/config.toml`. Use the configured `CODEX_HOME` if set.
+
+Remove the installed Skill directory at `~/.agents/skills/watch-video` or, for a Codex-specific install, `~/.codex/skills/watch-video`. Use the actual location if you installed it elsewhere.
+
+### DeepSeek Harness
+
+Remove the `id: watch-video-mcp` entry with `serverName: watch_video` from `~/.dsh/profiles/desktop/cordis.patch.yml`. Check each profile where you enabled it, such as `headless`. Use the configured `DSH_HOME` if set. If that entry was the only item under its `insert:` block, remove the empty block too.
+
+Remove the installed Skill directory at `~/.agents/skills/watch-video` or, for a Harness-specific install, `~/.dsh/skills/watch-video`. Use the actual location if you installed it elsewhere.
+
+### Other agent hosts
+
+Use the host's active MCP configuration to find the registration whose `command` runs the Watch Video executable with the `mcp` argument. Check which profile owns that entry and where the host found `watch-video/SKILL.md`. Remove the registration through the host's normal settings and remove that installed Skill directory once it is no longer shared.
+
+### Remove the shared model and cache
+
+After Codex, DeepSeek Harness and any other users of the installation have stopped using Watch Video, you can remove its shared data.
+
+- **macOS.** In Finder, use Go to Folder to open `~/Library/Application Support/watch-video` for the downloaded Whisper model and `~/Library/Caches/watch-video` for the recording cache. Move both directories to the Trash.
+- **Windows.** Open `%LOCALAPPDATA%\watch-video` in File Explorer and move it to the Recycle Bin. This directory contains the downloaded model, cache and the media tools installed by Watch Video.
+
+If you configured `--cache-dir`, check that location for Watch Video's cache too. Leave Homebrew or separately installed media tools in place if other software uses them.
